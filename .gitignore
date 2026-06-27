@@ -12,6 +12,10 @@ secrets.*
 # Local tooling
 .claude/
 
+# Database (local persistence)
+*.db
+*.sqlite3
+
 # Python
 venv/
 .venv/

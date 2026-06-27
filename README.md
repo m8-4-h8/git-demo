@@ -1,17 +1,32 @@
 # Ironsworn Telegram Bot
 
 A Telegram bot for the GM-less tabletop RPG **Ironsworn** — for solo and co-op
-play with friends in a group chat. This is **v0**: it stands up the project
-structure and a working bot that responds to `/start` and `/help`.
+play with friends in a group chat. This is **v0**.
+
+## Commands
+
+- `/start`, `/help` — introduction and command list
+- `/new` — create your character (a short step-by-step dialog)
+- `/me` — show your character sheet
+- `/set <track> <value>` — change `health`/`spirit`/`supply`/`momentum`
+- `/roll <stat> [adds] [burn]` — action roll using your character's stat;
+  `burn` spends momentum (replaces the score, then resets momentum to +2)
+- `/ask <odds> <question>` — yes/no Oracle
+- `/oracle [table]` — draw a spark of inspiration
+
+Characters are stored per `(chat, user)`, so several players can keep their own
+characters in one group chat.
 
 ## Architecture
 
 The game core is frontend-independent:
 
-- **`engine/`** — all game logic. Never imports `telegram`. Pure, fully
-  unit-testable functions.
-- **`bot/`** — thin Telegram layer: parse command → call `engine` → format
-  reply. No game logic in handlers.
+- **`engine/`** — all game logic and rules (rolls, oracles, character model).
+  Never imports `telegram` or `storage`. Pure, fully unit-testable functions.
+- **`storage/`** — persistence layer (async SQLite via `aiosqlite`). May import
+  `engine`; `engine` never imports it.
+- **`bot/`** — thin Telegram layer: parse command → call `engine` / `storage` →
+  format reply. No game logic in handlers.
 - **`tests/`** — unit tests; the engine is tested in isolation.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full project conventions.
@@ -52,7 +67,9 @@ python -m bot
 ```
 
 The bot uses long polling (no webhook). Send `/start` or `/help` to it in
-Telegram to confirm it responds.
+Telegram to confirm it responds. Character data is saved to a local SQLite file
+(`ironsworn.db` by default; override with `DB_PATH`). The database file is
+git-ignored.
 
 ## Tests
 

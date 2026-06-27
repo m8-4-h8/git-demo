@@ -10,17 +10,22 @@ The frontend is Telegram, but the game core is frontend-independent.
 ## Stack
 - Python 3.11+
 - python-telegram-bot 22.x (async)
-- SQLite — for persistence (added later, not yet wired)
+- SQLite for persistence, async via `aiosqlite` (lives in `storage/`)
 - pytest
 - Dependencies via `requirements.txt` + a virtualenv (`venv/`)
 - `BOT_TOKEN` read from the environment via `python-dotenv` (`.env`, git-ignored)
 
 ## Architecture rule (applies to the whole project)
-- **`engine/`** holds ALL game logic. It must **never import anything from
-  `telegram`** (or any other frontend). Pure, deterministic, fully
-  unit-testable functions.
-- **`bot/`** is the thin Telegram layer: parse the command → call `engine` →
-  format the reply. **No game logic in handlers.**
+- **`engine/`** holds ALL game logic and rules (rolls, oracles, character
+  model). It must **never import anything from `telegram`** (or any other
+  frontend) **nor from `storage`**. Pure, deterministic, fully unit-testable
+  functions.
+- **`storage/`** is the persistence layer (async SQLite via `aiosqlite`). It may
+  import `engine` (e.g. the `Character` model); `engine` never imports it.
+  Characters are keyed by `(chat_id, user_id)` for co-op in one chat.
+- **`bot/`** is the thin Telegram layer: parse the command → call `engine` /
+  `storage` → format the reply. **No game logic in handlers.** The store is
+  built in `bot/main.py` and shared via `application.bot_data["store"]`.
 
 This separation keeps the game core reusable across frontends (Telegram now,
 possibly CLI/others later) and trivially testable in isolation.
@@ -37,7 +42,9 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 
 ## Layout
 ```
-engine/   # pure game core, no telegram imports
+engine/   # pure game core (rules), no telegram/storage imports
+storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint)
-tests/    # unit tests (engine tested in isolation)
+data/     # oracle tables (JSON), editable content
+tests/    # unit tests (engine tested in isolation; storage via tmp db)
 ```

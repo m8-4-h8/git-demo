@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from engine.rolls import ActionRoll, Outcome, roll_action
+from engine.rolls import ActionRoll, Outcome, burn_momentum, roll_action
 
 
 class FakeRandom:
@@ -110,3 +110,48 @@ def test_default_rng_produces_in_range_dice() -> None:
     assert 1 <= result.action_die <= 6
     assert all(1 <= die <= 10 for die in result.challenge_dice)
     assert result.outcome in Outcome
+
+
+def test_default_roll_is_not_burned() -> None:
+    result = roll_action(2, rng=_rng(6, 3, 4))
+    assert result.burned is False
+
+
+def test_burn_turns_a_miss_into_a_strong_hit() -> None:
+    # natural: 1 + 0 = 1 vs (3, 4) -> miss
+    natural = roll_action(0, rng=_rng(1, 3, 4))
+    assert natural.outcome is Outcome.MISS
+
+    burned = burn_momentum(natural, momentum=8)
+    assert burned.burned is True
+    assert burned.action_score == 8
+    assert burned.outcome is Outcome.STRONG
+    # the challenge dice are untouched by the burn
+    assert burned.challenge_dice == natural.challenge_dice
+
+
+def test_burn_recomputes_to_weak_hit() -> None:
+    natural = roll_action(0, rng=_rng(1, 3, 9))  # miss vs (3, 9)
+    burned = burn_momentum(natural, momentum=5)  # 5 beats 3, not 9
+    assert burned.action_score == 5
+    assert burned.outcome is Outcome.WEAK
+
+
+def test_burn_negative_momentum_is_a_miss() -> None:
+    natural = roll_action(2, rng=_rng(6, 1, 1))  # strong hit
+    burned = burn_momentum(natural, momentum=-3)
+    assert burned.action_score == -3
+    assert burned.outcome is Outcome.MISS
+
+
+def test_burn_caps_score_at_10() -> None:
+    natural = roll_action(0, rng=_rng(1, 9, 9))
+    burned = burn_momentum(natural, momentum=10)
+    assert burned.action_score == 10
+    assert burned.outcome is Outcome.STRONG
+
+
+def test_burn_preserves_is_match() -> None:
+    natural = roll_action(0, rng=_rng(1, 7, 7))  # match
+    burned = burn_momentum(natural, momentum=9)
+    assert burned.is_match is True

@@ -16,7 +16,7 @@ Rules implemented:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 MAX_ACTION_SCORE = 10
@@ -46,6 +46,17 @@ class ActionRoll:
     action_score: int
     outcome: Outcome
     is_match: bool
+    burned: bool = False
+
+
+def _resolve(action_score: int, challenge_dice: tuple[int, int]) -> Outcome:
+    """Decide the outcome of an action score against the challenge dice."""
+    beaten = sum(1 for die in challenge_dice if action_score > die)
+    if beaten == 2:
+        return Outcome.STRONG
+    if beaten == 1:
+        return Outcome.WEAK
+    return Outcome.MISS
 
 
 def roll_action(
@@ -82,15 +93,6 @@ def roll_action(
     challenge_dice = (rng.randint(1, 10), rng.randint(1, 10))
 
     action_score = min(action_die + stat + adds, MAX_ACTION_SCORE)
-
-    beaten = sum(1 for die in challenge_dice if action_score > die)
-    if beaten == 2:
-        outcome = Outcome.STRONG
-    elif beaten == 1:
-        outcome = Outcome.WEAK
-    else:
-        outcome = Outcome.MISS
-
     is_match = challenge_dice[0] == challenge_dice[1]
 
     return ActionRoll(
@@ -99,6 +101,23 @@ def roll_action(
         stat=stat,
         adds=adds,
         action_score=action_score,
-        outcome=outcome,
+        outcome=_resolve(action_score, challenge_dice),
         is_match=is_match,
+    )
+
+
+def burn_momentum(roll: ActionRoll, momentum: int) -> ActionRoll:
+    """Burn momentum: replace the action score with the momentum value.
+
+    The challenge dice are unchanged; the outcome is recomputed against the new
+    score (capped at :data:`MAX_ACTION_SCORE`). Negative momentum naturally
+    produces a miss. Resetting the character's momentum afterward is the
+    caller's responsibility (see :func:`engine.character.reset_momentum`).
+    """
+    score = min(momentum, MAX_ACTION_SCORE)
+    return replace(
+        roll,
+        action_score=score,
+        outcome=_resolve(score, roll.challenge_dice),
+        burned=True,
     )
