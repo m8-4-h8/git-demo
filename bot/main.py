@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 from telegram.ext import Application, ApplicationBuilder, CommandHandler
 
-from bot.handlers import help_command, roll, start
+from bot.handlers import ask, help_command, oracle, roll, start
 
 
 def build_application(token: str) -> Application:
@@ -19,6 +19,8 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("roll", roll))
+    application.add_handler(CommandHandler("ask", ask))
+    application.add_handler(CommandHandler("oracle", oracle))
     return application
 
 

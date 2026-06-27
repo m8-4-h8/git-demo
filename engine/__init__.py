@@ -7,6 +7,29 @@ a CLI, tests, or any future frontend without modification.
 """
 
 from engine.core import greeting
+from engine.oracles import (
+    Answer,
+    Odds,
+    YesNoResult,
+    ask_yes_no,
+    draw_from,
+    list_tables,
+    random_table,
+    table_title,
+)
 from engine.rolls import ActionRoll, Outcome, roll_action
 
-__all__ = ["greeting", "roll_action", "ActionRoll", "Outcome"]
+__all__ = [
+    "greeting",
+    "roll_action",
+    "ActionRoll",
+    "Outcome",
+    "ask_yes_no",
+    "draw_from",
+    "random_table",
+    "table_title",
+    "list_tables",
+    "Odds",
+    "Answer",
+    "YesNoResult",
+]
