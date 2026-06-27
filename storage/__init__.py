@@ -5,6 +5,7 @@ Keeps storage concerns out of the pure game ``engine``. This package may import
 must never import ``storage``.
 """
 
+from storage.preferences import PreferenceStore
 from storage.store import CharacterExists, CharacterStore
 
-__all__ = ["CharacterStore", "CharacterExists"]
+__all__ = ["CharacterStore", "CharacterExists", "PreferenceStore"]
