@@ -23,8 +23,12 @@ from bot.i18n import (
     BURN_WORDS,
     LANGS,
     ODDS_ALIASES,
+    RANK_ALIASES,
     STAT_ALIASES,
+    TRACK_ACTIONS,
     TRACK_ALIASES,
+    TRACK_TYPE_ALIASES,
+    VOW_ACTIONS,
     resolve_lang,
     t,
 )
@@ -34,12 +38,21 @@ from engine import (
     Character,
     Odds,
     Outcome,
+    Rank,
+    TrackType,
     YesNoResult,
     ask_yes_no,
     bounds_for,
     burn_momentum,
+    clear_progress,
+    complete,
     draw_from,
+    end_encounter,
+    forsake,
+    fulfillment_roll,
     list_tables,
+    mark_track_progress,
+    mark_vow_progress,
     new_character,
     random_table,
     reset_momentum,
@@ -48,7 +61,7 @@ from engine import (
     stat_value,
     table_title,
 )
-from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN
+from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
 from storage import CharacterExists
 
 # Conversation states for /new.
@@ -72,6 +85,14 @@ def _store(context: ContextTypes.DEFAULT_TYPE):
 
 def _prefs(context: ContextTypes.DEFAULT_TYPE):
     return context.bot_data["prefs"]
+
+
+def _vow_store(context: ContextTypes.DEFAULT_TYPE):
+    return context.bot_data["vows"]
+
+
+def _track_store(context: ContextTypes.DEFAULT_TYPE):
+    return context.bot_data["tracks"]
 
 
 def _ids(update: Update) -> tuple[int, int]:
@@ -253,6 +274,258 @@ async def oracle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         t(lang, "oracle_line", title=table_title(table), entry=draw_from(table))
     )
+
+
+# --- vows --------------------------------------------------------------------
+
+
+async def vow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatch /vow <new|list|progress|fulfill|forsake> ...."""
+    if update.message is None:
+        return
+    lang = await _lang(update, context)
+    args = context.args or []
+    action = VOW_ACTIONS.get(args[0].strip().lower()) if args else None
+    rest = args[1:]
+    if action == "new":
+        await _vow_new(update, context, lang, rest)
+    elif action == "list":
+        await _vow_list(update, context, lang)
+    elif action == "progress":
+        await _vow_progress(update, context, lang, rest)
+    elif action == "fulfill":
+        await _vow_fulfill(update, context, lang, rest)
+    elif action == "forsake":
+        await _vow_forsake(update, context, lang, rest)
+    else:
+        await update.message.reply_text(t(lang, "vow_usage"))
+
+
+async def _vow_new(update, context, lang: str, rest: list[str]) -> None:
+    canonical = RANK_ALIASES.get(rest[0].strip().lower()) if rest else None
+    if canonical is None:
+        if rest:
+            await update.message.reply_text(t(lang, "vow_unknown_rank", rank=rest[0]))
+        else:
+            await update.message.reply_text(t(lang, "vow_new_usage"))
+        return
+    title = " ".join(rest[1:]).strip()
+    if not title:
+        await update.message.reply_text(t(lang, "vow_new_usage"))
+        return
+    chat_id, user_id = _ids(update)
+    created = await _vow_store(context).create(chat_id, user_id, title, Rank(canonical))
+    await update.message.reply_text(
+        t(lang, "vow_created") + "\n\n" + _format_vow(created, lang)
+    )
+
+
+async def _vow_list(update, context, lang: str) -> None:
+    chat_id, user_id = _ids(update)
+    vows = await _vow_store(context).list(chat_id, user_id)
+    if not vows:
+        await update.message.reply_text(t(lang, "vow_list_empty"))
+        return
+    lines = [t(lang, "vow_list_header")] + [_format_vow(v, lang) for v in vows]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _vow_progress(update, context, lang: str, rest: list[str]) -> None:
+    ref, hits = _split_ref_hits(rest)
+    if not ref:
+        await update.message.reply_text(t(lang, "vow_usage"))
+        return
+    chat_id, user_id = _ids(update)
+    store = _vow_store(context)
+    target = _match_target(await store.list(chat_id, user_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "vow_not_found", ref=ref))
+        return
+    updated = mark_vow_progress(target, hits)
+    await store.update(chat_id, user_id, updated)
+    await update.message.reply_text(
+        t(lang, "vow_progress_done", title=updated.title,
+          bar=_progress_bar(updated.progress), progress=updated.progress)
+    )
+
+
+async def _vow_fulfill(update, context, lang: str, rest: list[str]) -> None:
+    ref = " ".join(rest).strip()
+    if not ref:
+        await update.message.reply_text(t(lang, "vow_usage"))
+        return
+    chat_id, user_id = _ids(update)
+    store = _vow_store(context)
+    target = _match_target(await store.list(chat_id, user_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "vow_not_found", ref=ref))
+        return
+    result = fulfillment_roll(target)
+    if result.vow.fulfilled:
+        await store.update(chat_id, user_id, result.vow)
+    challenge_a, challenge_b = result.roll.challenge_dice
+    note_key = {
+        Outcome.STRONG: "vow_fulfilled_strong",
+        Outcome.WEAK: "vow_fulfilled_weak",
+        Outcome.MISS: "vow_fulfill_miss",
+    }[result.roll.outcome]
+    lines = [
+        t(lang, "vow_fulfill_header", title=target.title),
+        t(lang, "vow_fulfill_line", score=result.roll.action_score,
+          a=challenge_a, b=challenge_b,
+          result=_outcome_label(result.roll.outcome, lang)),
+        t(lang, note_key),
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _vow_forsake(update, context, lang: str, rest: list[str]) -> None:
+    ref = " ".join(rest).strip()
+    if not ref:
+        await update.message.reply_text(t(lang, "vow_usage"))
+        return
+    chat_id, user_id = _ids(update)
+    store = _vow_store(context)
+    target = _match_target(await store.list(chat_id, user_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "vow_not_found", ref=ref))
+        return
+    await store.update(chat_id, user_id, forsake(target))
+    # Forsaking a vow costs 1 spirit, if the player has a character.
+    char_store = _store(context)
+    character = await char_store.get(chat_id, user_id)
+    if character is None:
+        await update.message.reply_text(t(lang, "vow_forsaken_no_char", title=target.title))
+        return
+    new_spirit = max(TRACK_MIN, character.spirit - 1)
+    await char_store.update(chat_id, user_id, set_field(character, "spirit", new_spirit))
+    await update.message.reply_text(
+        t(lang, "vow_forsaken_spirit", title=target.title, spirit=new_spirit)
+    )
+
+
+# --- progress tracks ---------------------------------------------------------
+
+
+async def track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatch /track <new|list|hit|end|clear> ...."""
+    if update.message is None:
+        return
+    lang = await _lang(update, context)
+    args = context.args or []
+    action = TRACK_ACTIONS.get(args[0].strip().lower()) if args else None
+    rest = args[1:]
+    if action == "new":
+        await _track_new(update, context, lang, rest)
+    elif action == "list":
+        await _track_list(update, context, lang)
+    elif action == "hit":
+        await _track_hit(update, context, lang, rest)
+    elif action == "end":
+        await _track_end(update, context, lang, rest)
+    elif action == "clear":
+        await _track_clear(update, context, lang, rest)
+    else:
+        await update.message.reply_text(t(lang, "track_usage"))
+
+
+async def _track_new(update, context, lang: str, rest: list[str]) -> None:
+    type_canonical = TRACK_TYPE_ALIASES.get(rest[0].strip().lower()) if rest else None
+    if type_canonical is None:
+        if rest:
+            await update.message.reply_text(t(lang, "track_unknown_type", type=rest[0]))
+        else:
+            await update.message.reply_text(t(lang, "track_new_usage"))
+        return
+    rank_canonical = RANK_ALIASES.get(rest[1].strip().lower()) if len(rest) > 1 else None
+    if rank_canonical is None:
+        if len(rest) > 1:
+            await update.message.reply_text(t(lang, "track_unknown_rank", rank=rest[1]))
+        else:
+            await update.message.reply_text(t(lang, "track_new_usage"))
+        return
+    title = " ".join(rest[2:]).strip()
+    if not title:
+        await update.message.reply_text(t(lang, "track_new_usage"))
+        return
+    chat_id, _ = _ids(update)
+    created = await _track_store(context).create(
+        chat_id, title, TrackType(type_canonical), Rank(rank_canonical)
+    )
+    await update.message.reply_text(
+        t(lang, "track_created") + "\n\n" + _format_track(created, lang)
+    )
+
+
+async def _track_list(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    tracks = await _track_store(context).list(chat_id)
+    if not tracks:
+        await update.message.reply_text(t(lang, "track_list_empty"))
+        return
+    lines = [t(lang, "track_list_header")] + [_format_track(tr, lang) for tr in tracks]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _track_hit(update, context, lang: str, rest: list[str]) -> None:
+    ref, hits = _split_ref_hits(rest)
+    if not ref:
+        await update.message.reply_text(t(lang, "track_usage"))
+        return
+    chat_id, _ = _ids(update)
+    store = _track_store(context)
+    target = _match_target(await store.list(chat_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "track_not_found", ref=ref))
+        return
+    updated = mark_track_progress(target, hits)
+    await store.update(chat_id, updated)
+    await update.message.reply_text(
+        t(lang, "track_hit_done", title=updated.title,
+          bar=_progress_bar(updated.progress), progress=updated.progress)
+    )
+
+
+async def _track_end(update, context, lang: str, rest: list[str]) -> None:
+    ref = " ".join(rest).strip()
+    if not ref:
+        await update.message.reply_text(t(lang, "track_usage"))
+        return
+    chat_id, _ = _ids(update)
+    store = _track_store(context)
+    target = _match_target(await store.list(chat_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "track_not_found", ref=ref))
+        return
+    outcome = end_encounter(target)
+    await store.update(chat_id, complete(target))
+    note_key = {
+        Outcome.STRONG: "track_end_strong",
+        Outcome.WEAK: "track_end_weak",
+        Outcome.MISS: "track_end_miss",
+    }[outcome]
+    lines = [
+        t(lang, "track_end_header", title=target.title),
+        t(lang, "track_end_line", bar=_progress_bar(target.progress),
+          progress=target.progress, result=_outcome_label(outcome, lang)),
+        t(lang, note_key),
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _track_clear(update, context, lang: str, rest: list[str]) -> None:
+    ref = " ".join(rest).strip()
+    if not ref:
+        await update.message.reply_text(t(lang, "track_usage"))
+        return
+    chat_id, _ = _ids(update)
+    store = _track_store(context)
+    target = _match_target(await store.list(chat_id), ref)
+    if target is None:
+        await update.message.reply_text(t(lang, "track_not_found", ref=ref))
+        return
+    await store.update(chat_id, clear_progress(target))
+    await update.message.reply_text(t(lang, "track_cleared", title=target.title))
 
 
 # --- language ----------------------------------------------------------------
@@ -482,6 +755,63 @@ def _outcome_label(outcome: Outcome, lang: str) -> str:
 
 def _odds_label(odds: Odds, lang: str) -> str:
     return t(lang, f"odds_{odds.name.lower()}")
+
+
+_BAR_SEGMENTS = 10
+
+
+def _progress_bar(progress: float, segments: int = _BAR_SEGMENTS) -> str:
+    """Render a progress track as a 10-segment bar (▓ full, ▒ half, ░ empty)."""
+    full = int(progress)
+    bar = "▓" * full
+    if progress - full >= 0.5 and full < segments:
+        bar += "▒"
+        full += 1
+    return bar + "░" * (segments - full)
+
+
+def _rank_label(rank: Rank, lang: str) -> str:
+    return t(lang, f"rank_{rank.value}")
+
+
+def _type_label(track_type: TrackType, lang: str) -> str:
+    return t(lang, f"type_{track_type.value}")
+
+
+def _format_vow(vow_obj, lang: str) -> str:
+    return t(lang, "vow_item", id=vow_obj.id, title=vow_obj.title,
+             rank=_rank_label(vow_obj.rank, lang),
+             bar=_progress_bar(vow_obj.progress), progress=vow_obj.progress)
+
+
+def _format_track(track_obj, lang: str) -> str:
+    return t(lang, "track_item", id=track_obj.id, title=track_obj.title,
+             type=_type_label(track_obj.track_type, lang),
+             rank=_rank_label(track_obj.rank, lang),
+             bar=_progress_bar(track_obj.progress), progress=track_obj.progress)
+
+
+def _match_target(items, ref: str):
+    """Find an item (vow/track) by numeric id, then exact title, then unique substring."""
+    ref = ref.strip()
+    if ref.isdigit():
+        wanted = int(ref)
+        return next((item for item in items if item.id == wanted), None)
+    low = ref.lower()
+    for item in items:
+        if item.title.lower() == low:
+            return item
+    matches = [item for item in items if low in item.title.lower()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _split_ref_hits(tokens: list[str]) -> tuple[str, int]:
+    """Split tokens into (reference, hits); a trailing integer is taken as hits."""
+    if not tokens:
+        return "", 1
+    if len(tokens) > 1 and tokens[-1].isdigit():
+        return " ".join(tokens[:-1]).strip(), max(1, int(tokens[-1]))
+    return " ".join(tokens).strip(), 1
 
 
 def _parse_roll_args(args: list[str]) -> tuple[str, int, bool] | None:

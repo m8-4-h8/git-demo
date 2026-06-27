@@ -40,6 +40,42 @@ ODDS_ALIASES = {
 
 BURN_WORDS = {"burn", "сжечь", "импульс"}
 
+# Difficulty ranks (shared by vows and tracks) -> canonical engine rank value.
+RANK_ALIASES = {
+    "troublesome": "troublesome", "беспокойный": "troublesome",
+    "тревожный": "troublesome",
+    "dangerous": "dangerous", "опасный": "dangerous",
+    "formidable": "formidable", "грозный": "formidable",
+    "extreme": "extreme", "экстремальный": "extreme",
+    "epic": "epic", "эпический": "epic",
+}
+
+# Progress-track types -> canonical engine track type value.
+TRACK_TYPE_ALIASES = {
+    "combat": "combat", "схватка": "combat", "бой": "combat",
+    "journey": "journey", "путешествие": "journey", "путь": "journey",
+    "bond": "bond", "связь": "bond",
+    "custom": "custom", "своё": "custom", "свое": "custom", "другое": "custom",
+}
+
+# /vow sub-commands -> canonical action.
+VOW_ACTIONS = {
+    "new": "new", "новый": "new", "создать": "new",
+    "list": "list", "список": "list",
+    "progress": "progress", "прогресс": "progress", "отметить": "progress",
+    "fulfill": "fulfill", "выполнить": "fulfill", "исполнить": "fulfill",
+    "forsake": "forsake", "отказаться": "forsake", "бросить": "forsake",
+}
+
+# /track sub-commands -> canonical action.
+TRACK_ACTIONS = {
+    "new": "new", "новый": "new", "создать": "new",
+    "list": "list", "список": "list",
+    "hit": "hit", "отметить": "hit", "прогресс": "hit",
+    "end": "end", "завершить": "end", "конец": "end",
+    "clear": "clear", "сброс": "clear", "сбросить": "clear",
+}
+
 
 def resolve_lang(stored: str | None, tg_code: str | None) -> str:
     """Pick the language: stored choice, else Telegram client code, else EN."""
@@ -84,6 +120,8 @@ TEXTS: dict[str, dict[str, str]] = {
             "/ask <odds> <question> — ask the Oracle (yes/no)\n"
             "/oracle [table] — draw a spark of inspiration\n"
             "/set <track> <value> — change health/spirit/supply/momentum\n"
+            "/vow <new|list|progress|fulfill|forsake> — sworn quests\n"
+            "/track <new|list|hit|end|clear> — group progress tracks\n"
             "/tutorial — interactive walkthrough\n"
             "/guide — how to play\n"
             "/language — switch RU/EN\n\n"
@@ -103,6 +141,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "gate guarded?` — it answers yes/no.\n"
             "3) Stuck for ideas? `/oracle` gives you a spark (a place, an NPC…).\n"
             "4) Track your hero with `/me`; adjust with `/set`.\n\n"
+            "*Vows & tracks:* swear a quest with `/vow new <rank> <title>`, mark "
+            "progress as you act (`/vow progress 1`), then `/vow fulfill 1` to test "
+            "the outcome. `/track` works the same way for combats, journeys and "
+            "bonds shared by the whole group.\n\n"
             "That's it. Start with /new and just play. Try /tutorial to see it in "
             "action."
         ),
@@ -171,6 +213,83 @@ TEXTS: dict[str, dict[str, str]] = {
         # language
         "language_current": "Current language: {lang}. Choose:",
         "language_set": "Language set to {lang}.",
+        # vows & progress tracks — rank / type labels
+        "rank_troublesome": "Troublesome", "rank_dangerous": "Dangerous",
+        "rank_formidable": "Formidable", "rank_extreme": "Extreme",
+        "rank_epic": "Epic",
+        "type_combat": "Combat", "type_journey": "Journey",
+        "type_bond": "Bond", "type_custom": "Custom",
+        # vows
+        "vow_usage": (
+            "Usage:\n"
+            "/vow new <rank> <title>\n"
+            "/vow list\n"
+            "/vow progress <id|title> [hits]\n"
+            "/vow fulfill <id|title>\n"
+            "/vow forsake <id|title>\n"
+            "ranks: troublesome, dangerous, formidable, extreme, epic"
+        ),
+        "vow_new_usage": (
+            "Usage: /vow new <rank> <title>\n"
+            "ranks: troublesome, dangerous, formidable, extreme, epic\n"
+            "example: /vow new dangerous Find the lost troop"
+        ),
+        "vow_unknown_rank": (
+            "Unknown rank '{rank}'. Choose: troublesome, dangerous, "
+            "formidable, extreme, epic."
+        ),
+        "vow_item": "#{id} {title} [{rank}]\n{bar} {progress:.1f}/10",
+        "vow_created": "🗡 Vow sworn!",
+        "vow_list_header": "🗡 Active vows:",
+        "vow_list_empty": "No active vows. Swear one with: /vow new <rank> <title>",
+        "vow_not_found": "Vow '{ref}' not found. See /vow list.",
+        "vow_progress_done": "📈 Progress on “{title}”\n{bar} {progress:.1f}/10",
+        "vow_fulfill_header": "🗡 Fulfillment roll — “{title}”",
+        "vow_fulfill_line": (
+            "Progress score {score} · challenge dice {a} | {b}\nResult: {result}"
+        ),
+        "vow_fulfilled_strong": "💪 Strong hit — vow fulfilled! 🎉",
+        "vow_fulfilled_weak": "👍 Weak hit — fulfilled, but with a complication.",
+        "vow_fulfill_miss": "💥 Miss — not fulfilled. Progress stands; keep going.",
+        "vow_forsaken_spirit": "🏳 Vow “{title}” forsaken. Spirit −1 (now {spirit}/5).",
+        "vow_forsaken_no_char": "🏳 Vow “{title}” forsaken.",
+        # progress tracks
+        "track_usage": (
+            "Usage:\n"
+            "/track new <type> <rank> <title>\n"
+            "/track list\n"
+            "/track hit <id|title> [hits]\n"
+            "/track end <id|title>\n"
+            "/track clear <id|title>\n"
+            "types: combat, journey, bond, custom"
+        ),
+        "track_new_usage": (
+            "Usage: /track new <type> <rank> <title>\n"
+            "types: combat, journey, bond, custom\n"
+            "ranks: troublesome, dangerous, formidable, extreme, epic\n"
+            "example: /track new combat formidable Duel with the warlord"
+        ),
+        "track_unknown_type": (
+            "Unknown type '{type}'. Choose: combat, journey, bond, custom."
+        ),
+        "track_unknown_rank": (
+            "Unknown rank '{rank}'. Choose: troublesome, dangerous, "
+            "formidable, extreme, epic."
+        ),
+        "track_item": "#{id} {title} [{type} · {rank}]\n{bar} {progress:.1f}/10",
+        "track_created": "🧭 Progress track created!",
+        "track_list_header": "🧭 Active group tracks:",
+        "track_list_empty": (
+            "No active tracks. Start one with: /track new <type> <rank> <title>"
+        ),
+        "track_not_found": "Track '{ref}' not found. See /track list.",
+        "track_hit_done": "📈 Progress on “{title}”\n{bar} {progress:.1f}/10",
+        "track_end_header": "🧭 Encounter ended — “{title}”",
+        "track_end_line": "{bar} {progress:.1f}/10\nResult: {result}",
+        "track_end_strong": "💪 Strong hit — a decisive success!",
+        "track_end_weak": "👍 Weak hit — success, at a cost.",
+        "track_end_miss": "💥 Miss — it goes badly.",
+        "track_cleared": "🧭 Track “{title}” cleared (progress reset to 0).",
         # buttons
         "btn_next": "Next ▶", "btn_back": "◀ Back", "btn_play": "Let's play! ▶",
         "btn_ru": "Русский", "btn_en": "English",
@@ -230,6 +349,8 @@ TEXTS: dict[str, dict[str, str]] = {
             "/ask <шанс> <вопрос> — спросить Оракула (да/нет)\n"
             "/oracle [таблица] — подсказка-вдохновение\n"
             "/set <трек> <значение> — изменить здоровье/дух/припасы/импульс\n"
+            "/vow <new|list|progress|fulfill|forsake> — обеты (клятвы)\n"
+            "/track <new|list|hit|end|clear> — треки прогресса группы\n"
             "/tutorial — интерактивный разбор\n"
             "/guide — как играть\n"
             "/language — переключить RU/EN\n\n"
@@ -249,6 +370,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "охраняют?` — ответит да/нет.\n"
             "3) Нет идей? `/oracle` подкинет искру (место, персонажа…).\n"
             "4) Следи за героем через `/me`, меняй через `/set`.\n\n"
+            "*Обеты и треки:* принеси обет `/vow new <ранг> <название>`, отмечай "
+            "прогресс по ходу игры (`/vow progress 1`), затем `/vow fulfill 1` — "
+            "бросок исхода. `/track` работает так же для схваток, путешествий и "
+            "связей, общих для всей группы.\n\n"
             "Вот и всё. Начни с /new и просто играй. Глянь /tutorial — там по шагам."
         ),
         # generic
@@ -316,6 +441,83 @@ TEXTS: dict[str, dict[str, str]] = {
         # language
         "language_current": "Текущий язык: {lang}. Выбери:",
         "language_set": "Язык переключён на {lang}.",
+        # vows & progress tracks — rank / type labels
+        "rank_troublesome": "Беспокойный", "rank_dangerous": "Опасный",
+        "rank_formidable": "Грозный", "rank_extreme": "Экстремальный",
+        "rank_epic": "Эпический",
+        "type_combat": "Схватка", "type_journey": "Путешествие",
+        "type_bond": "Связь", "type_custom": "Своё",
+        # vows
+        "vow_usage": (
+            "Использование:\n"
+            "/vow new <ранг> <название>\n"
+            "/vow list\n"
+            "/vow progress <id|название> [разы]\n"
+            "/vow fulfill <id|название>\n"
+            "/vow forsake <id|название>\n"
+            "ранги: troublesome, dangerous, formidable, extreme, epic"
+        ),
+        "vow_new_usage": (
+            "Использование: /vow new <ранг> <название>\n"
+            "ранги: troublesome, dangerous, formidable, extreme, epic\n"
+            "пример: /vow new dangerous Найти пропавший отряд"
+        ),
+        "vow_unknown_rank": (
+            "Неизвестный ранг «{rank}». Выбери: troublesome, dangerous, "
+            "formidable, extreme, epic."
+        ),
+        "vow_item": "#{id} {title} [{rank}]\n{bar} {progress:.1f}/10",
+        "vow_created": "🗡 Обет принесён!",
+        "vow_list_header": "🗡 Активные обеты:",
+        "vow_list_empty": "Нет активных обетов. Принеси: /vow new <ранг> <название>",
+        "vow_not_found": "Обет «{ref}» не найден. Смотри /vow list.",
+        "vow_progress_done": "📈 Прогресс по «{title}»\n{bar} {progress:.1f}/10",
+        "vow_fulfill_header": "🗡 Бросок выполнения — «{title}»",
+        "vow_fulfill_line": (
+            "Очки прогресса {score} · кубики испытания {a} | {b}\nИтог: {result}"
+        ),
+        "vow_fulfilled_strong": "💪 Сильный успех — обет выполнен! 🎉",
+        "vow_fulfilled_weak": "👍 Слабый успех — выполнен, но с осложнением.",
+        "vow_fulfill_miss": "💥 Провал — не выполнен. Прогресс сохраняется, продолжай.",
+        "vow_forsaken_spirit": "🏳 Обет «{title}» оставлен. Дух −1 (теперь {spirit}/5).",
+        "vow_forsaken_no_char": "🏳 Обет «{title}» оставлен.",
+        # progress tracks
+        "track_usage": (
+            "Использование:\n"
+            "/track new <тип> <ранг> <название>\n"
+            "/track list\n"
+            "/track hit <id|название> [разы]\n"
+            "/track end <id|название>\n"
+            "/track clear <id|название>\n"
+            "типы: combat, journey, bond, custom"
+        ),
+        "track_new_usage": (
+            "Использование: /track new <тип> <ранг> <название>\n"
+            "типы: combat, journey, bond, custom\n"
+            "ранги: troublesome, dangerous, formidable, extreme, epic\n"
+            "пример: /track new combat formidable Дуэль с вождём"
+        ),
+        "track_unknown_type": (
+            "Неизвестный тип «{type}». Выбери: combat, journey, bond, custom."
+        ),
+        "track_unknown_rank": (
+            "Неизвестный ранг «{rank}». Выбери: troublesome, dangerous, "
+            "formidable, extreme, epic."
+        ),
+        "track_item": "#{id} {title} [{type} · {rank}]\n{bar} {progress:.1f}/10",
+        "track_created": "🧭 Трек прогресса создан!",
+        "track_list_header": "🧭 Активные треки группы:",
+        "track_list_empty": (
+            "Нет активных треков. Начни: /track new <тип> <ранг> <название>"
+        ),
+        "track_not_found": "Трек «{ref}» не найден. Смотри /track list.",
+        "track_hit_done": "📈 Прогресс по «{title}»\n{bar} {progress:.1f}/10",
+        "track_end_header": "🧭 Испытание завершено — «{title}»",
+        "track_end_line": "{bar} {progress:.1f}/10\nИтог: {result}",
+        "track_end_strong": "💪 Сильный успех — решительная победа!",
+        "track_end_weak": "👍 Слабый успех — успех, но с ценой.",
+        "track_end_miss": "💥 Провал — всё идёт плохо.",
+        "track_cleared": "🧭 Трек «{title}» сброшен (прогресс обнулён).",
         # buttons
         "btn_next": "Дальше ▶", "btn_back": "◀ Назад", "btn_play": "Поехали! ▶",
         "btn_ru": "Русский", "btn_en": "English",
