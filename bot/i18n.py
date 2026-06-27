@@ -50,7 +50,7 @@ def resolve_lang(stored: str | None, tg_code: str | None) -> str:
     return DEFAULT_LANG
 
 
-def t(lang: str, key: str, **kwargs: object) -> str:
+def t(lang: str, key: str, /, **kwargs: object) -> str:
     """Render a localized string, falling back to English then the key itself."""
     table = TEXTS.get(lang, TEXTS[DEFAULT_LANG])
     template = table.get(key) or TEXTS[DEFAULT_LANG].get(key) or key
