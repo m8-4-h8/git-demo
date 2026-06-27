@@ -5,7 +5,9 @@ play with friends in a group chat. This is **v0**.
 
 ## Commands
 
-- `/start`, `/help` — introduction and command list
+- `/start` — friendly intro to what the game is
+- `/tutorial` — interactive, paged walkthrough
+- `/guide`, `/help` — how to play and the command list
 - `/new` — create your character (a short step-by-step dialog)
 - `/me` — show your character sheet
 - `/set <track> <value>` — change `health`/`spirit`/`supply`/`momentum`
@@ -13,9 +15,15 @@ play with friends in a group chat. This is **v0**.
   `burn` spends momentum (replaces the score, then resets momentum to +2)
 - `/ask <odds> <question>` — yes/no Oracle
 - `/oracle [table]` — draw a spark of inspiration
+- `/language` — switch the bot's language (RU/EN)
 
-Characters are stored per `(chat, user)`, so several players can keep their own
-characters in one group chat.
+The interface is **bilingual (Russian/English)**; each player's language is
+stored and defaults to their Telegram client language. Command keywords accept
+either language (e.g. `/roll iron` or `/roll сталь`, `/ask likely …` or
+`/ask вероятно …`).
+
+Characters and language preferences are stored per `(chat, user)`, so several
+players can keep their own characters in one group chat.
 
 ## Architecture
 
@@ -26,7 +34,8 @@ The game core is frontend-independent:
 - **`storage/`** — persistence layer (async SQLite via `aiosqlite`). May import
   `engine`; `engine` never imports it.
 - **`bot/`** — thin Telegram layer: parse command → call `engine` / `storage` →
-  format reply. No game logic in handlers.
+  format reply. User-facing text is localized in `bot/i18n.py`. No game logic in
+  handlers.
 - **`tests/`** — unit tests; the engine is tested in isolation.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full project conventions.
