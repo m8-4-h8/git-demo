@@ -121,3 +121,31 @@ def burn_momentum(roll: ActionRoll, momentum: int) -> ActionRoll:
         outcome=_resolve(score, roll.challenge_dice),
         burned=True,
     )
+
+
+def progress_roll(score: int, *, rng: random.Random | None = None) -> ActionRoll:
+    """Resolve an Ironsworn progress roll.
+
+    Unlike an action roll, a progress roll has *no* action die: the score comes
+    straight from a progress track (0-10), and there is no stat or adds. The two
+    challenge dice are rolled as usual and the score is compared against them
+    with the same strong/weak/miss rules as :func:`roll_action`.
+
+    This reuses :func:`roll_action` to draw the challenge dice (the action die it
+    rolls is irrelevant here and is zeroed out in the result).
+
+    Args:
+        score: The progress score to compare, clamped to 0-10.
+        rng: Random source exposing ``randint`` for deterministic tests. The
+            draw order is the action die (ignored) then the two challenge dice.
+    """
+    base = roll_action(0, rng=rng)
+    capped = max(0, min(score, MAX_ACTION_SCORE))
+    return replace(
+        base,
+        action_die=0,
+        stat=0,
+        adds=0,
+        action_score=capped,
+        outcome=_resolve(capped, base.challenge_dice),
+    )

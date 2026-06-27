@@ -7,5 +7,13 @@ must never import ``storage``.
 
 from storage.preferences import PreferenceStore
 from storage.store import CharacterExists, CharacterStore
+from storage.tracks import TrackStore
+from storage.vows import VowStore
 
-__all__ = ["CharacterStore", "CharacterExists", "PreferenceStore"]
+__all__ = [
+    "CharacterStore",
+    "CharacterExists",
+    "PreferenceStore",
+    "VowStore",
+    "TrackStore",
+]
