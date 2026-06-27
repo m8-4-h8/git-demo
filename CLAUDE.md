@@ -33,7 +33,10 @@ possibly CLI/others later) and trivially testable in isolation.
 ## Conventions
 - English for all code, names, comments, and commit messages.
 - Type hints everywhere.
-- Bot user-facing text is in English.
+- Bot user-facing text is bilingual (RU/EN). All strings live in `bot/i18n.py`
+  (`TEXTS[lang][key]`, rendered via `t(lang, key, ...)`); never hardcode
+  user-facing literals in handlers. The `engine` stays language-agnostic
+  (returns enums/data; the bot localizes them).
 - Keep v0 simple: no game mechanics, no LLM, no premature complexity.
 
 ## Run
@@ -44,7 +47,7 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 ```
 engine/   # pure game core (rules), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
-bot/      # thin Telegram frontend (handlers, entrypoint)
+bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
 data/     # oracle tables (JSON), editable content
 tests/    # unit tests (engine tested in isolation; storage via tmp db)
 ```
