@@ -7,5 +7,6 @@ a CLI, tests, or any future frontend without modification.
 """
 
 from engine.core import greeting
+from engine.rolls import ActionRoll, Outcome, roll_action
 
-__all__ = ["greeting"]
+__all__ = ["greeting", "roll_action", "ActionRoll", "Outcome"]
