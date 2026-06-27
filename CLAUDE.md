@@ -1,0 +1,50 @@
+# CLAUDE.md
+
+Guidance for future sessions working in this repo.
+
+## Goal
+A Telegram bot for the GM-less (no game master) tabletop RPG **Ironsworn**,
+supporting solo play and co-op play with friends in a group chat. This is **v0**.
+The frontend is Telegram, but the game core is frontend-independent.
+
+## Stack
+- Python 3.11+
+- python-telegram-bot 22.x (async)
+- SQLite for persistence, async via `aiosqlite` (lives in `storage/`)
+- pytest
+- Dependencies via `requirements.txt` + a virtualenv (`venv/`)
+- `BOT_TOKEN` read from the environment via `python-dotenv` (`.env`, git-ignored)
+
+## Architecture rule (applies to the whole project)
+- **`engine/`** holds ALL game logic and rules (rolls, oracles, character
+  model). It must **never import anything from `telegram`** (or any other
+  frontend) **nor from `storage`**. Pure, deterministic, fully unit-testable
+  functions.
+- **`storage/`** is the persistence layer (async SQLite via `aiosqlite`). It may
+  import `engine` (e.g. the `Character` model); `engine` never imports it.
+  Characters are keyed by `(chat_id, user_id)` for co-op in one chat.
+- **`bot/`** is the thin Telegram layer: parse the command → call `engine` /
+  `storage` → format the reply. **No game logic in handlers.** The store is
+  built in `bot/main.py` and shared via `application.bot_data["store"]`.
+
+This separation keeps the game core reusable across frontends (Telegram now,
+possibly CLI/others later) and trivially testable in isolation.
+
+## Conventions
+- English for all code, names, comments, and commit messages.
+- Type hints everywhere.
+- Bot user-facing text is in English.
+- Keep v0 simple: no game mechanics, no LLM, no premature complexity.
+
+## Run
+See `README.md` for venv setup. Run the bot with `python -m bot`
+(long polling, not webhook). Run tests with `pytest`.
+
+## Layout
+```
+engine/   # pure game core (rules), no telegram/storage imports
+storage/  # async SQLite persistence (aiosqlite); may import engine
+bot/      # thin Telegram frontend (handlers, entrypoint)
+data/     # oracle tables (JSON), editable content
+tests/    # unit tests (engine tested in isolation; storage via tmp db)
+```
