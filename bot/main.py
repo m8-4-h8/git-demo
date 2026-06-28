@@ -5,15 +5,22 @@ builds the python-telegram-bot application, registers command handlers, opens
 the character and preference stores, and starts long polling. No webhook.
 """
 
+import logging
 import os
 
 from dotenv import load_dotenv
+from telegram import Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
+    ContextTypes,
 )
+
+from bot.i18n import resolve_lang, t
+
+logger = logging.getLogger(__name__)
 
 from bot.handlers import (
     ask,
@@ -43,6 +50,22 @@ async def _post_init(application: Application) -> None:
     await application.bot_data["prefs"].init()
     await application.bot_data["vows"].init()
     await application.bot_data["tracks"].init()
+
+
+async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log any unhandled handler error and tell the player something broke.
+
+    The player's language is taken from their Telegram client (no DB call, so
+    this stays robust even if the failure was storage-related).
+    """
+    logger.error("Unhandled error while processing an update", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message is not None:
+        user = update.effective_user
+        lang = resolve_lang(None, user.language_code if user else None)
+        try:
+            await update.effective_message.reply_text(t(lang, "error_generic"))
+        except Exception:  # noqa: BLE001 — never let the error handler raise
+            pass
 
 
 def build_application(
@@ -84,6 +107,7 @@ def build_application(
     application.add_handler(CommandHandler("track", track))
     application.add_handler(CallbackQueryHandler(language_callback, pattern=r"^lang:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern=r"^tut:"))
+    application.add_error_handler(_on_error)
     return application
 
 

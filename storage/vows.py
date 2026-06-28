@@ -13,6 +13,7 @@ import aiosqlite
 
 from engine.progress import Rank
 from engine.vows import Vow
+from storage._db import connect
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS vows (
@@ -49,15 +50,29 @@ class VowStore:
 
     async def init(self) -> None:
         """Create the vows table if it does not exist."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
             await db.commit()
 
     async def create(
         self, chat_id: int, user_id: int, title: str, rank: Rank
     ) -> Vow:
-        """Create a new vow with the next per-player id and return it."""
-        async with aiosqlite.connect(self._db_path) as db:
+        """Create a new vow with the next per-player id and return it.
+
+        If two creates race and collide on the primary key, retry once with a
+        freshly computed id.
+        """
+        for attempt in range(2):
+            try:
+                return await self._insert(chat_id, user_id, title, rank)
+            except aiosqlite.IntegrityError:
+                if attempt == 1:
+                    raise
+
+    async def _insert(
+        self, chat_id: int, user_id: int, title: str, rank: Rank
+    ) -> Vow:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 "SELECT COALESCE(MAX(vow_id), 0) + 1 FROM vows "
                 "WHERE chat_id = ? AND user_id = ?",
@@ -77,7 +92,7 @@ class VowStore:
 
     async def get(self, chat_id: int, user_id: int, vow_id: int) -> Vow | None:
         """Return one vow by its per-player id, or None."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 "SELECT vow_id, title, rank, progress, fulfilled, forsaken "
                 "FROM vows WHERE chat_id = ? AND user_id = ? AND vow_id = ?",
@@ -100,14 +115,14 @@ class VowStore:
         if active_only:
             query += " AND fulfilled = 0 AND forsaken = 0"
         query += " ORDER BY vow_id"
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(query, (chat_id, user_id)) as cursor:
                 rows = await cursor.fetchall()
         return [_row_to_vow(row) for row in rows]
 
     async def update(self, chat_id: int, user_id: int, vow: Vow) -> None:
         """Overwrite a stored vow (matched by its per-player id)."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(
                 "UPDATE vows SET title = ?, rank = ?, progress = ?, "
                 "fulfilled = ?, forsaken = ? "

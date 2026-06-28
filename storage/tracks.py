@@ -13,6 +13,7 @@ import aiosqlite
 
 from engine.progress import Rank
 from engine.tracks import Track, TrackType
+from storage._db import connect
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS tracks (
@@ -48,15 +49,29 @@ class TrackStore:
 
     async def init(self) -> None:
         """Create the tracks table if it does not exist."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
             await db.commit()
 
     async def create(
         self, chat_id: int, title: str, track_type: TrackType, rank: Rank
     ) -> Track:
-        """Create a new track with the next per-chat id and return it."""
-        async with aiosqlite.connect(self._db_path) as db:
+        """Create a new track with the next per-chat id and return it.
+
+        If two creates race and collide on the primary key, retry once with a
+        freshly computed id.
+        """
+        for attempt in range(2):
+            try:
+                return await self._insert(chat_id, title, track_type, rank)
+            except aiosqlite.IntegrityError:
+                if attempt == 1:
+                    raise
+
+    async def _insert(
+        self, chat_id: int, title: str, track_type: TrackType, rank: Rank
+    ) -> Track:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 "SELECT COALESCE(MAX(track_id), 0) + 1 FROM tracks "
                 "WHERE chat_id = ?",
@@ -76,7 +91,7 @@ class TrackStore:
 
     async def get(self, chat_id: int, track_id: int) -> Track | None:
         """Return one track by its per-chat id, or None."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 "SELECT track_id, title, track_type, rank, progress, completed "
                 "FROM tracks WHERE chat_id = ? AND track_id = ?",
@@ -94,14 +109,14 @@ class TrackStore:
         if active_only:
             query += " AND completed = 0"
         query += " ORDER BY track_id"
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(query, (chat_id,)) as cursor:
                 rows = await cursor.fetchall()
         return [_row_to_track(row) for row in rows]
 
     async def update(self, chat_id: int, track: Track) -> None:
         """Overwrite a stored track (matched by its per-chat id)."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(
                 "UPDATE tracks SET title = ?, track_type = ?, rank = ?, "
                 "progress = ?, completed = ? "

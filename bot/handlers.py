@@ -64,7 +64,7 @@ from engine import (
     table_title,
 )
 from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
-from narrator import NarratorContext, narrate
+from narrator import NarratorContext, is_enabled as narrator_enabled, narrate
 from storage import CharacterExists
 
 # Conversation states for /new.
@@ -241,6 +241,8 @@ def _fire_narration(
     follow-up message 0-8s later. If the narrator is disabled or fails, nothing
     is sent and no error surfaces to the player.
     """
+    if not narrator_enabled():
+        return
     chat = update.effective_chat
 
     async def _run() -> None:

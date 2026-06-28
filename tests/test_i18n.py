@@ -77,6 +77,19 @@ def test_resolve_lang(stored, code, expected) -> None:
     assert resolve_lang(stored, code) == expected
 
 
+def test_plain_sent_strings_have_no_markdown_markers() -> None:
+    # Only these keys are sent with ParseMode.MARKDOWN; every other string is
+    # sent plain, so it must not contain stray Markdown markers (which would
+    # render literally to the player).
+    markdown_sent = {"start", "guide", "tut_1", "tut_2", "tut_3", "tut_4"}
+    for lang in LANGS:
+        for key, value in TEXTS[lang].items():
+            if key in markdown_sent:
+                continue
+            assert "*" not in value, f"{lang}/{key} has a stray '*'"
+            assert "`" not in value, f"{lang}/{key} has a stray backtick"
+
+
 def test_aliases_map_to_canonical_names() -> None:
     assert STAT_ALIASES["сталь"] == "iron"
     assert STAT_ALIASES["iron"] == "iron"

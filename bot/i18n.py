@@ -113,7 +113,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Language: /language"
         ),
         "help": (
-            "🎲 *Commands*\n"
+            "🎲 Commands\n"
             "/new — create your hero (step by step)\n"
             "/me — show your hero sheet\n"
             "/roll <stat> [adds] [burn] — action roll\n"
@@ -150,6 +150,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         # generic
         "no_character": "You don't have a hero yet. Create one with /new.",
+        "error_generic": "⚠️ Something went wrong. Please try again.",
         # roll
         "roll_usage": (
             "Usage: /roll <stat> [adds] [burn]\n"
@@ -342,7 +343,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Язык: /language"
         ),
         "help": (
-            "🎲 *Команды*\n"
+            "🎲 Команды\n"
             "/new — создать героя (по шагам)\n"
             "/me — лист героя\n"
             "/roll <хар-ка> [бонус] [сжечь] — бросок действия\n"
@@ -378,6 +379,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         # generic
         "no_character": "У тебя ещё нет героя. Создай командой /new.",
+        "error_generic": "⚠️ Что-то пошло не так. Попробуй ещё раз.",
         # roll
         "roll_usage": (
             "Использование: /roll <хар-ка> [бонус] [сжечь]\n"
