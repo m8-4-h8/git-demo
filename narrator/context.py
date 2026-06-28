@@ -19,7 +19,7 @@ class NarratorContext:
     outcome: Outcome
     is_match: bool
     stat_used: str
-    character_name: str
+    character_name: str = ""
     delta: dict[str, int] = field(default_factory=dict)
     active_vow: str | None = None
     active_track: str | None = None

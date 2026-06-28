@@ -230,13 +230,10 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     _schedule_narration(update, context, result, stat_name, character.name, lang)
 
 
-def _schedule_narration(
+def _fire_narration(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    result: ActionRoll,
-    stat_name: str,
-    character_name: str,
-    lang: str,
+    narrator_context: NarratorContext,
 ) -> None:
     """Fire the narrator without blocking the mechanical reply.
 
@@ -245,14 +242,6 @@ def _schedule_narration(
     is sent and no error surfaces to the player.
     """
     chat = update.effective_chat
-    narrator_context = NarratorContext(
-        move_name=f"action roll ({stat_name})",
-        outcome=result.outcome,
-        is_match=result.is_match,
-        stat_used=stat_name,
-        character_name=character_name,
-        language=lang,
-    )
 
     async def _run() -> None:
         prose = await narrate(narrator_context)
@@ -262,6 +251,29 @@ def _schedule_narration(
             )
 
     context.application.create_task(_run())
+
+
+def _schedule_narration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: ActionRoll,
+    stat_name: str,
+    character_name: str,
+    lang: str,
+) -> None:
+    """Narrate the outcome of an action roll."""
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name=f"action roll ({stat_name})",
+            outcome=result.outcome,
+            is_match=result.is_match,
+            stat_used=stat_name,
+            character_name=character_name,
+            language=lang,
+        ),
+    )
 
 
 # --- oracle commands ---------------------------------------------------------
@@ -415,6 +427,20 @@ async def _vow_fulfill(update, context, lang: str, rest: list[str]) -> None:
         t(lang, note_key),
     ]
     await update.message.reply_text("\n".join(lines))
+    character = await _store(context).get(chat_id, user_id)
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name="fulfill your vow",
+            outcome=result.roll.outcome,
+            is_match=result.roll.is_match,
+            stat_used="heart",
+            character_name=character.name if character else "",
+            active_vow=target.title,
+            language=lang,
+        ),
+    )
 
 
 async def _vow_forsake(update, context, lang: str, rest: list[str]) -> None:
@@ -529,7 +555,7 @@ async def _track_end(update, context, lang: str, rest: list[str]) -> None:
     if not ref:
         await update.message.reply_text(t(lang, "track_usage"))
         return
-    chat_id, _ = _ids(update)
+    chat_id, user_id = _ids(update)
     store = _track_store(context)
     target = _match_target(await store.list(chat_id), ref)
     if target is None:
@@ -549,6 +575,20 @@ async def _track_end(update, context, lang: str, rest: list[str]) -> None:
         t(lang, note_key),
     ]
     await update.message.reply_text("\n".join(lines))
+    character = await _store(context).get(chat_id, user_id)
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name="resolve the encounter",
+            outcome=outcome,
+            is_match=False,
+            stat_used="",
+            character_name=character.name if character else "",
+            active_track=target.title,
+            language=lang,
+        ),
+    )
 
 
 async def _track_clear(update, context, lang: str, rest: list[str]) -> None:

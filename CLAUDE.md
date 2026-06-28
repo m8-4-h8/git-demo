@@ -27,7 +27,8 @@ The frontend is Telegram, but the game core is frontend-independent.
   `storage` → format the reply. **No game logic in handlers.** The store is
   built in `bot/main.py` and shared via `application.bot_data["store"]`.
 - **`narrator/`** is an OPTIONAL LLM prose layer (Anthropic). After a mechanical
-  outcome it writes 2-3 sentences of flavor — it **describes, never decides**
+  outcome (a roll, a vow fulfillment, an encounter) it writes 2-3 sentences of
+  flavor — it **describes, never decides**
   (the `engine` is the source of truth). It may import `engine` types but never
   `bot`/`telegram`. Gated by the `NARRATOR_ENABLED` env flag and fails soft
   (returns `None`) so the bot works without it.

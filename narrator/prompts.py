@@ -51,7 +51,7 @@ def build_user_prompt(context: NarratorContext) -> str:
         f"Outcome: {outcome}",
         f"Match (doubled challenge dice): {'yes' if context.is_match else 'no'}",
         f"What changed: {_format_delta(context.delta)}",
-        f"Character: {context.character_name}",
+        f"Character: {context.character_name or 'the hero'}",
         f"Active vow: {context.active_vow or 'none'}",
         f"Active progress track: {context.active_track or 'none'}",
         f"Respond in: {'Russian' if context.language == 'ru' else 'English'}",

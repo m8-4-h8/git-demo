@@ -90,6 +90,21 @@ def test_empty_text_returns_none(monkeypatch) -> None:
     assert _run(narrate(_ctx(), client=FakeClient(text="   "))) is None
 
 
+def test_user_prompt_handles_missing_character_and_optionals() -> None:
+    # tracks are group-level: no character, no vow.
+    ctx = NarratorContext(
+        move_name="resolve the encounter",
+        outcome=Outcome.STRONG,
+        is_match=False,
+        stat_used="",
+        active_track="Combat with the bandits",
+    )
+    prompt = build_user_prompt(ctx)
+    assert "the hero" in prompt          # character fallback
+    assert "Active vow: none" in prompt
+    assert "Combat with the bandits" in prompt
+
+
 def test_user_prompt_contains_all_context_fields() -> None:
     prompt = build_user_prompt(_ctx(language="ru"))
     assert "action roll (iron)" in prompt
