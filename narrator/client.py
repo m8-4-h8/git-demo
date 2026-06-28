@@ -18,14 +18,30 @@ MAX_TOKENS = 150
 DEFAULT_TIMEOUT = 8.0
 
 # Re-exported so callers can `from narrator import NarratorContext`.
-__all__ = ["NarratorContext", "narrate"]
+__all__ = ["NarratorContext", "narrate", "is_enabled"]
+
+# Lazily-created, reused across calls so we don't build a client per roll.
+_default_client = None
 
 
-def _enabled() -> bool:
-    """True if NARRATOR_ENABLED is set to a truthy value."""
+def is_enabled() -> bool:
+    """True if NARRATOR_ENABLED is set to a truthy value.
+
+    The bot uses this to skip scheduling narration work entirely when off.
+    """
     return os.environ.get("NARRATOR_ENABLED", "false").strip().lower() in {
         "1", "true", "yes", "on",
     }
+
+
+def _get_client():
+    """Return a shared AsyncAnthropic client, building it on first use."""
+    global _default_client
+    if _default_client is None:
+        from anthropic import AsyncAnthropic  # lazy: optional dependency
+
+        _default_client = AsyncAnthropic()
+    return _default_client
 
 
 def _extract_text(response: object) -> str:
@@ -54,14 +70,12 @@ async def narrate(
         The prose string, or ``None`` if the narrator is disabled, times out, or
         the API call fails. Never raises.
     """
-    if not _enabled():
+    if not is_enabled():
         return None
 
     try:
         if client is None:
-            from anthropic import AsyncAnthropic  # lazy: optional dependency
-
-            client = AsyncAnthropic()
+            client = _get_client()
 
         response = await asyncio.wait_for(
             client.messages.create(

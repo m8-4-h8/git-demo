@@ -3,6 +3,7 @@
 import asyncio
 
 from storage import PreferenceStore
+from storage._db import BUSY_TIMEOUT_MS, connect
 
 
 def _store(tmp_path) -> PreferenceStore:
@@ -11,6 +12,16 @@ def _store(tmp_path) -> PreferenceStore:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_connect_applies_busy_timeout(tmp_path) -> None:
+    async def scenario():
+        async with connect(str(tmp_path / "t.db")) as db:
+            async with db.execute("PRAGMA busy_timeout") as cursor:
+                (value,) = await cursor.fetchone()
+        return value
+
+    assert _run(scenario()) == BUSY_TIMEOUT_MS
 
 
 def test_get_missing_returns_none(tmp_path) -> None:

@@ -8,6 +8,6 @@ and this layer only visualizes the result. It must never import ``bot`` or
 bot keeps working without it.
 """
 
-from narrator.client import NarratorContext, narrate
+from narrator.client import NarratorContext, is_enabled, narrate
 
-__all__ = ["NarratorContext", "narrate"]
+__all__ = ["NarratorContext", "narrate", "is_enabled"]

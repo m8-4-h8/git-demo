@@ -12,6 +12,7 @@ from dataclasses import astuple, fields
 import aiosqlite
 
 from engine.character import Character
+from storage._db import connect
 
 # Character field names, in declaration order, used to build SQL and map rows.
 _FIELDS = tuple(f.name for f in fields(Character))
@@ -48,14 +49,14 @@ class CharacterStore:
 
     async def init(self) -> None:
         """Create the characters table if it does not exist."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
             await db.commit()
 
     async def get(self, chat_id: int, user_id: int) -> Character | None:
         """Return the character for (chat, user), or None if there is none."""
         columns = ", ".join(_FIELDS)
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 f"SELECT {columns} FROM characters WHERE chat_id = ? AND user_id = ?",
                 (chat_id, user_id),
@@ -74,7 +75,7 @@ class CharacterStore:
         all_columns = (*_KEY_COLUMNS, *_FIELDS)
         placeholders = ", ".join("?" for _ in all_columns)
         values = (chat_id, user_id, *astuple(character))
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             try:
                 await db.execute(
                     f"INSERT INTO characters ({', '.join(all_columns)}) "
@@ -93,7 +94,7 @@ class CharacterStore:
         """Overwrite the stored character for (chat, user)."""
         assignments = ", ".join(f"{name} = ?" for name in _FIELDS)
         values = (*astuple(character), chat_id, user_id)
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(
                 f"UPDATE characters SET {assignments} "
                 "WHERE chat_id = ? AND user_id = ?",
