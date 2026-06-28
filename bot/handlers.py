@@ -9,6 +9,8 @@ language. No game logic lives here.
 
 from __future__ import annotations
 
+import html
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -62,6 +64,7 @@ from engine import (
     table_title,
 )
 from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
+from narrator import NarratorContext, narrate
 from storage import CharacterExists
 
 # Conversation states for /new.
@@ -224,6 +227,41 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await store.update(chat_id, user_id, reset_momentum(character))
 
     await update.message.reply_text(_format_roll(result, stat_name, lang))
+    _schedule_narration(update, context, result, stat_name, character.name, lang)
+
+
+def _schedule_narration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: ActionRoll,
+    stat_name: str,
+    character_name: str,
+    lang: str,
+) -> None:
+    """Fire the narrator without blocking the mechanical reply.
+
+    The mechanics have already been sent; the prose (if any) arrives as a
+    follow-up message 0-8s later. If the narrator is disabled or fails, nothing
+    is sent and no error surfaces to the player.
+    """
+    chat = update.effective_chat
+    narrator_context = NarratorContext(
+        move_name=f"action roll ({stat_name})",
+        outcome=result.outcome,
+        is_match=result.is_match,
+        stat_used=stat_name,
+        character_name=character_name,
+        language=lang,
+    )
+
+    async def _run() -> None:
+        prose = await narrate(narrator_context)
+        if prose:
+            await chat.send_message(
+                f"<i>{html.escape(prose)}</i>", parse_mode=ParseMode.HTML
+            )
+
+    context.application.create_task(_run())
 
 
 # --- oracle commands ---------------------------------------------------------

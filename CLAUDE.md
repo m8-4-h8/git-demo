@@ -26,6 +26,11 @@ The frontend is Telegram, but the game core is frontend-independent.
 - **`bot/`** is the thin Telegram layer: parse the command → call `engine` /
   `storage` → format the reply. **No game logic in handlers.** The store is
   built in `bot/main.py` and shared via `application.bot_data["store"]`.
+- **`narrator/`** is an OPTIONAL LLM prose layer (Anthropic). After a mechanical
+  outcome it writes 2-3 sentences of flavor — it **describes, never decides**
+  (the `engine` is the source of truth). It may import `engine` types but never
+  `bot`/`telegram`. Gated by the `NARRATOR_ENABLED` env flag and fails soft
+  (returns `None`) so the bot works without it.
 
 This separation keeps the game core reusable across frontends (Telegram now,
 possibly CLI/others later) and trivially testable in isolation.
@@ -37,7 +42,9 @@ possibly CLI/others later) and trivially testable in isolation.
   (`TEXTS[lang][key]`, rendered via `t(lang, key, ...)`); never hardcode
   user-facing literals in handlers. The `engine` stays language-agnostic
   (returns enums/data; the bot localizes them).
-- Keep v0 simple: no game mechanics, no LLM, no premature complexity.
+- Keep it simple; avoid premature complexity. The only LLM use is the optional
+  `narrator/` (gated by `NARRATOR_ENABLED`), which describes outcomes but never
+  drives mechanics.
 
 ## Run
 See `README.md` for venv setup. Run the bot with `python -m bot`
@@ -48,6 +55,7 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 engine/   # pure game core (rules), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
+narrator/ # optional LLM prose layer (Anthropic); describes, never decides
 data/     # oracle tables (JSON), editable content
 tests/    # unit tests (engine tested in isolation; storage via tmp db)
 ```
