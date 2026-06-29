@@ -1,4 +1,4 @@
-"""Optional AI Game Master layer (Anthropic).
+"""Optional AI Game Master layer (local LLM via Ollama).
 
 The GM proposes scenarios and describes the evolving world after each action —
 introducing NPCs, threats, and twists, and keeping continuity across turns. It

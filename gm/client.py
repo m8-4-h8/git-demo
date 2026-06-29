@@ -1,9 +1,15 @@
 """The AI Game Master client.
 
-Calls Anthropic (``claude-sonnet-4-6``) to propose scenarios and describe the
+Sends async HTTP requests to a local **Ollama** server (default model
+``mistral``, endpoint ``/api/chat``) to propose scenarios and describe the
 evolving world. It generates narrative only — it never resolves mechanics. The
 whole layer is gated by ``GM_ENABLED`` and fails soft: on a disabled flag,
-timeout, or API error every function returns ``None`` and never raises.
+timeout, or HTTP error every function returns ``None`` and never raises.
+
+Configuration (all optional, read from the environment):
+- ``GM_ENABLED`` — turn the Game Master on/off.
+- ``OLLAMA_BASE_URL`` — Ollama server URL (default ``http://localhost:11434``).
+- ``OLLAMA_MODEL`` — model name, overriding :data:`MODEL`.
 """
 
 from __future__ import annotations
@@ -20,10 +26,12 @@ from gm.prompts import (
     build_system_prompt,
 )
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "mistral"
+TEMPERATURE = 0.8
 SCENE_MAX_TOKENS = 300
 SCENARIO_MAX_TOKENS = 800
 DEFAULT_TIMEOUT = 10.0
+DEFAULT_BASE_URL = "http://localhost:11434"
 
 __all__ = [
     "generate_scenario_options",
@@ -31,28 +39,6 @@ __all__ = [
     "generate_complication",
     "is_enabled",
 ]
-
-# JSON schema constraining the scenario response (3 requested in the prompt).
-_SCENARIO_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "scenarios": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "goal": {"type": "string"},
-                    "opening_scene": {"type": "string"},
-                },
-                "required": ["title", "goal", "opening_scene"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["scenarios"],
-    "additionalProperties": False,
-}
 
 _default_client = None
 
@@ -64,20 +50,32 @@ def is_enabled() -> bool:
     }
 
 
+def _base_url() -> str:
+    """The Ollama base URL, configurable via ``OLLAMA_BASE_URL``."""
+    return os.environ.get("OLLAMA_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+
+
+def _model() -> str:
+    """The Ollama model name, configurable via ``OLLAMA_MODEL``."""
+    return os.environ.get("OLLAMA_MODEL", MODEL)
+
+
 def _get_client():
+    """Return a shared ``httpx.AsyncClient``, building it on first use."""
     global _default_client
     if _default_client is None:
-        from anthropic import AsyncAnthropic  # lazy: optional dependency
+        import httpx  # lazy: optional dependency
 
-        _default_client = AsyncAnthropic()
+        _default_client = httpx.AsyncClient()
     return _default_client
 
 
-def _extract_text(response: object) -> str:
-    for block in getattr(response, "content", []) or []:
-        if getattr(block, "type", None) == "text":
-            return (getattr(block, "text", "") or "").strip()
-    return ""
+def _extract_text(data: object) -> str:
+    """Pull the assistant text out of an Ollama ``/api/chat`` response body."""
+    if not isinstance(data, dict):
+        return ""
+    message = data.get("message") or {}
+    return (message.get("content") or "").strip()
 
 
 async def _complete(
@@ -87,44 +85,55 @@ async def _complete(
     client,
     timeout: float,
     max_tokens: int,
-    output_config: dict | None = None,
-):
-    """Run one Messages request, or return None on disabled/timeout/error."""
+    json_mode: bool = False,
+) -> str | None:
+    """Run one Ollama chat request, returning the text or None on any problem.
+
+    With ``json_mode`` the request asks Ollama to constrain its output to valid
+    JSON (Ollama's ``format: "json"``); callers then parse the text.
+    """
     if not is_enabled():
         return None
+    payload = {
+        "model": _model(),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "options": {"temperature": TEMPERATURE, "num_predict": max_tokens},
+    }
+    if json_mode:
+        payload["format"] = "json"
     try:
         if client is None:
             client = _get_client()
-        kwargs = {
-            "model": MODEL,
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-            "thinking": {"type": "disabled"},
-        }
-        if output_config is not None:
-            kwargs["output_config"] = output_config
-        return await asyncio.wait_for(client.messages.create(**kwargs), timeout=timeout)
+        response = await asyncio.wait_for(
+            client.post(f"{_base_url()}/api/chat", json=payload), timeout=timeout
+        )
+        response.raise_for_status()
+        data = response.json()
     except Exception:
         return None
+    return _extract_text(data) or None
 
 
 async def generate_scenario_options(
     language: str, *, client=None, timeout: float = DEFAULT_TIMEOUT
 ) -> list[ScenarioOption] | None:
     """Return exactly three scenario options, or None on any problem."""
-    response = await _complete(
+    text = await _complete(
         build_system_prompt(language),
         build_scenario_prompt(language),
         client=client,
         timeout=timeout,
         max_tokens=SCENARIO_MAX_TOKENS,
-        output_config={"format": {"type": "json_schema", "schema": _SCENARIO_SCHEMA}},
+        json_mode=True,
     )
-    if response is None:
+    if text is None:
         return None
     try:
-        data = json.loads(_extract_text(response))
+        data = json.loads(text)
         items = data["scenarios"]
         options = [
             ScenarioOption(
@@ -144,29 +153,23 @@ async def generate_scene(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> str | None:
     """Narrate what the world does next after a player's action, or None."""
-    response = await _complete(
+    return await _complete(
         build_system_prompt(context.language),
         build_scene_prompt(context, last_move_result),
         client=client,
         timeout=timeout,
         max_tokens=SCENE_MAX_TOKENS,
     )
-    if response is None:
-        return None
-    return _extract_text(response) or None
 
 
 async def generate_complication(
     context: GMContext, *, client=None, timeout: float = DEFAULT_TIMEOUT
 ) -> str | None:
     """Introduce a complication/turn (used on a miss), or None."""
-    response = await _complete(
+    return await _complete(
         build_system_prompt(context.language),
         build_complication_prompt(context),
         client=client,
         timeout=timeout,
         max_tokens=SCENE_MAX_TOKENS,
     )
-    if response is None:
-        return None
-    return _extract_text(response) or None
