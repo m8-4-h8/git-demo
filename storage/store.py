@@ -88,6 +88,17 @@ class CharacterStore:
                 ) from error
             await db.commit()
 
+    async def list(self, chat_id: int) -> list[Character]:
+        """Return all characters in a chat (the co-op party), ordered by user."""
+        columns = ", ".join(_FIELDS)
+        async with connect(self._db_path) as db:
+            async with db.execute(
+                f"SELECT {columns} FROM characters WHERE chat_id = ? ORDER BY user_id",
+                (chat_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [Character(*row) for row in rows]
+
     async def update(
         self, chat_id: int, user_id: int, character: Character
     ) -> None:

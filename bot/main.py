@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 from bot.handlers import (
     ask,
     build_new_handler,
+    gm,
+    gm_callback,
     guide,
     help_command,
     language_callback,
@@ -39,7 +41,13 @@ from bot.handlers import (
     tutorial_callback,
     vow,
 )
-from storage import CharacterStore, PreferenceStore, TrackStore, VowStore
+from storage import (
+    CharacterStore,
+    GMStateStore,
+    PreferenceStore,
+    TrackStore,
+    VowStore,
+)
 
 DEFAULT_DB_PATH = "ironsworn.db"
 
@@ -50,6 +58,7 @@ async def _post_init(application: Application) -> None:
     await application.bot_data["prefs"].init()
     await application.bot_data["vows"].init()
     await application.bot_data["tracks"].init()
+    await application.bot_data["gm_state"].init()
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -74,6 +83,7 @@ def build_application(
     prefs: PreferenceStore | None = None,
     vows: VowStore | None = None,
     tracks: TrackStore | None = None,
+    gm_state: GMStateStore | None = None,
 ) -> Application:
     """Build the Telegram application and register command handlers."""
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
@@ -85,12 +95,15 @@ def build_application(
         vows = VowStore(db_path)
     if tracks is None:
         tracks = TrackStore(db_path)
+    if gm_state is None:
+        gm_state = GMStateStore(db_path)
 
     application = ApplicationBuilder().token(token).post_init(_post_init).build()
     application.bot_data["store"] = store
     application.bot_data["prefs"] = prefs
     application.bot_data["vows"] = vows
     application.bot_data["tracks"] = tracks
+    application.bot_data["gm_state"] = gm_state
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -105,8 +118,10 @@ def build_application(
     application.add_handler(CommandHandler("oracle", oracle))
     application.add_handler(CommandHandler("vow", vow))
     application.add_handler(CommandHandler("track", track))
+    application.add_handler(CommandHandler("gm", gm))
     application.add_handler(CallbackQueryHandler(language_callback, pattern=r"^lang:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern=r"^tut:"))
+    application.add_handler(CallbackQueryHandler(gm_callback, pattern=r"^gm:"))
     application.add_error_handler(_on_error)
     return application
 

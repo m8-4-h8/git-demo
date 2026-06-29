@@ -32,6 +32,12 @@ The frontend is Telegram, but the game core is frontend-independent.
   (the `engine` is the source of truth). It may import `engine` types but never
   `bot`/`telegram`. Gated by the `NARRATOR_ENABLED` env flag and fails soft
   (returns `None`) so the bot works without it.
+- **`gm/`** is an OPTIONAL AI Game Master (Anthropic). It proposes scenarios,
+  describes the evolving world after each action, introduces NPCs/threats, and
+  keeps continuity across turns — but **generates narrative only, never
+  mechanics** (the `engine` decides rolls/outcomes). It may import `engine`
+  types but never `bot`/`telegram`; campaign state is persisted in `storage/`
+  (`gm_state`, per chat). Gated by the `GM_ENABLED` env flag and fails soft.
 
 This separation keeps the game core reusable across frontends (Telegram now,
 possibly CLI/others later) and trivially testable in isolation.
@@ -57,6 +63,7 @@ engine/   # pure game core (rules), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
 narrator/ # optional LLM prose layer (Anthropic); describes, never decides
+gm/       # optional AI Game Master (Anthropic); narrative & scenes, never mechanics
 data/     # oracle tables (JSON), editable content
 tests/    # unit tests (engine tested in isolation; storage via tmp db)
 ```

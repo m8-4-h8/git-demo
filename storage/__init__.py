@@ -5,6 +5,7 @@ Keeps storage concerns out of the pure game ``engine``. This package may import
 must never import ``storage``.
 """
 
+from storage.gm_state import GMStateStore
 from storage.preferences import PreferenceStore
 from storage.store import CharacterExists, CharacterStore
 from storage.tracks import TrackStore
@@ -16,4 +17,5 @@ __all__ = [
     "PreferenceStore",
     "VowStore",
     "TrackStore",
+    "GMStateStore",
 ]
