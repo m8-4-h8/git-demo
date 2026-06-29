@@ -76,6 +76,14 @@ TRACK_ACTIONS = {
     "clear": "clear", "сброс": "clear", "сбросить": "clear",
 }
 
+# /gm sub-commands -> canonical action.
+GM_ACTIONS = {
+    "start": "start", "старт": "start", "начать": "start",
+    "scene": "scene", "сцена": "scene",
+    "npcs": "npcs", "нпс": "npcs", "персонажи": "npcs",
+    "stop": "stop", "стоп": "stop", "завершить": "stop",
+}
+
 
 def resolve_lang(stored: str | None, tg_code: str | None) -> str:
     """Pick the language: stored choice, else Telegram client code, else EN."""
@@ -113,7 +121,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Language: /language"
         ),
         "help": (
-            "🎲 *Commands*\n"
+            "🎲 Commands\n"
             "/new — create your hero (step by step)\n"
             "/me — show your hero sheet\n"
             "/roll <stat> [adds] [burn] — action roll\n"
@@ -122,6 +130,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "/set <track> <value> — change health/spirit/supply/momentum\n"
             "/vow <new|list|progress|fulfill|forsake> — sworn quests\n"
             "/track <new|list|hit|end|clear> — group progress tracks\n"
+            "/gm <start|scene|npcs|stop> — play with an AI Game Master\n"
             "/tutorial — interactive walkthrough\n"
             "/guide — how to play\n"
             "/language — switch RU/EN\n\n"
@@ -150,6 +159,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         # generic
         "no_character": "You don't have a hero yet. Create one with /new.",
+        "error_generic": "⚠️ Something went wrong. Please try again.",
         # roll
         "roll_usage": (
             "Usage: /roll <stat> [adds] [burn]\n"
@@ -342,7 +352,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "Язык: /language"
         ),
         "help": (
-            "🎲 *Команды*\n"
+            "🎲 Команды\n"
             "/new — создать героя (по шагам)\n"
             "/me — лист героя\n"
             "/roll <хар-ка> [бонус] [сжечь] — бросок действия\n"
@@ -351,6 +361,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "/set <трек> <значение> — изменить здоровье/дух/припасы/импульс\n"
             "/vow <new|list|progress|fulfill|forsake> — обеты (клятвы)\n"
             "/track <new|list|hit|end|clear> — треки прогресса группы\n"
+            "/gm <start|scene|npcs|stop> — игра с AI-Мастером\n"
             "/tutorial — интерактивный разбор\n"
             "/guide — как играть\n"
             "/language — переключить RU/EN\n\n"
@@ -378,6 +389,7 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
         # generic
         "no_character": "У тебя ещё нет героя. Создай командой /new.",
+        "error_generic": "⚠️ Что-то пошло не так. Попробуй ещё раз.",
         # roll
         "roll_usage": (
             "Использование: /roll <хар-ка> [бонус] [сжечь]\n"
@@ -552,3 +564,189 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+
+# --- AI Game Master strings (gm/ layer) ----------------------------------------
+TEXTS["en"].update({
+    "gm_usage": "Usage: /gm start | scene | npcs | stop",
+    "gm_disabled": "The Game Master is turned off.",
+    "gm_pick_header": "🎲 Choose your campaign:",
+    "gm_pick_failed": "The Game Master is silent right now — try again in a moment.",
+    "gm_pick_expired": "Those options expired. Run /gm start again.",
+    "gm_started": "🗺️ Campaign begun: {title}\nA vow is sworn: {goal}",
+    "gm_scene_header": "🗺️ Current scene:",
+    "gm_no_campaign": "No active campaign. Start one with /gm start.",
+    "gm_npcs_header": "🎭 NPCs the GM remembers:",
+    "gm_npcs_empty": "The GM hasn't named any NPCs yet.",
+    "gm_npc_item": "• {name}: {description}",
+    "gm_stop_confirm": "End the current campaign? Its state will be cleared.",
+    "gm_stopped": "Campaign ended.",
+    "gm_stop_cancelled": "Cancelled — the campaign continues.",
+    "gm_yes": "Yes, end it",
+    "gm_no": "No, keep playing",
+})
+TEXTS["ru"].update({
+    "gm_usage": "Использование: /gm start | scene | npcs | stop",
+    "gm_disabled": "Мастер (GM) выключен.",
+    "gm_pick_header": "🎲 Выбери кампанию:",
+    "gm_pick_failed": "Мастер сейчас молчит — попробуй ещё раз через миг.",
+    "gm_pick_expired": "Эти варианты устарели. Запусти /gm start заново.",
+    "gm_started": "🗺️ Кампания начата: {title}\nПринесён обет: {goal}",
+    "gm_scene_header": "🗺️ Текущая сцена:",
+    "gm_no_campaign": "Активной кампании нет. Начни её командой /gm start.",
+    "gm_npcs_header": "🎭 NPC, которых помнит Мастер:",
+    "gm_npcs_empty": "Мастер пока не называл NPC по имени.",
+    "gm_npc_item": "• {name}: {description}",
+    "gm_stop_confirm": "Завершить текущую кампанию? Её состояние будет очищено.",
+    "gm_stopped": "Кампания завершена.",
+    "gm_stop_cancelled": "Отменено — кампания продолжается.",
+    "gm_yes": "Да, завершить",
+    "gm_no": "Нет, играем дальше",
+})
+
+
+# --- Button-driven UX (menu, moves, submenus) ----------------------------------
+TEXTS["en"].update({
+    # navigation
+    "btn_home": "🏠 Menu",
+    "menu_title": "Main menu — pick an action:",
+    # main-menu buttons
+    "menu_move": "⚔️ Make a Move",
+    "menu_roll": "🎲 Roll",
+    "menu_vows": "📜 My Vows",
+    "menu_tracks": "🗺️ Tracks",
+    "menu_character": "👤 Character",
+    "menu_oracle": "🔮 Oracle",
+    "menu_gm": "🎭 GM / Scene",
+    "menu_help": "❓ Help",
+    # move categories
+    "cat_adventure": "🌄 Adventure",
+    "cat_combat": "⚔️ Combat",
+    "cat_quest": "🎯 Quest",
+    # move names
+    "move_strike": "Strike",
+    "move_clash": "Clash",
+    "move_face_danger": "Face Danger",
+    "move_secure_advantage": "Secure an Advantage",
+    "move_gather_information": "Gather Information",
+    "move_gather_your_resolve": "Gather Your Resolve",
+    "move_reach_a_milestone": "Reach a Milestone",
+    # move flow
+    "move_cat_title": "Choose a move category:",
+    "move_pick_title": "Choose a move:",
+    "move_stat_title": "Which stat do you roll?",
+    "move_result_header": "⚔️ {move}",
+    "move_effect_header": "Effect:",
+    "move_no_effect": "No mechanical change.",
+    # roll / oracle flows
+    "roll_pick_title": "Roll which stat?",
+    "oracle_pick_title": "How likely is it?",
+    # character submenu
+    "char_menu_title": "Character:",
+    "char_show_btn": "📜 Sheet",
+    "char_set_btn": "✏️ Adjust tracks",
+    "char_create_btn": "✨ Create hero",
+    "char_set_title": "Which track to adjust?",
+    "char_field_now": "{field}: {value}",
+    # vows submenu
+    "vow_menu_title": "Vows:",
+    "vow_list_title": "Choose a vow:",
+    "vow_act_title": "What do you do with this vow?",
+    "vow_list_btn": "📜 List",
+    "vow_new_btn": "✨ New vow",
+    "vow_do_progress": "📈 Progress",
+    "vow_do_fulfill": "✅ Fulfill",
+    "vow_do_forsake": "🏳 Forsake",
+    "vnew_pick_rank": "Choose the vow's rank:",
+    "vnew_ask_title": "Type the vow's title: (/cancel to abort)",
+    # tracks submenu
+    "track_menu_title": "Group tracks:",
+    "track_list_title": "Choose a track:",
+    "track_act_title": "What do you do with this track?",
+    "track_list_btn": "🗺️ List",
+    "track_new_btn": "✨ New track",
+    "track_do_hit": "📈 Mark progress",
+    "track_do_end": "🏁 End",
+    "track_do_clear": "🧹 Clear",
+    "tnew_pick_type": "Choose the track type:",
+    "tnew_pick_rank": "Choose the track's rank:",
+    "tnew_ask_title": "Type the track's title: (/cancel to abort)",
+    # GM submenu
+    "gm_menu_title": "Game Master:",
+    "gm_start_btn": "🗺️ Start campaign",
+    "gm_scene_btn": "🎬 Scene",
+    "gm_npcs_btn": "🎭 NPCs",
+    "gm_stop_btn": "⏹ End campaign",
+})
+TEXTS["ru"].update({
+    # navigation
+    "btn_home": "🏠 Меню",
+    "menu_title": "Главное меню — выбери действие:",
+    # main-menu buttons
+    "menu_move": "⚔️ Сделать ход",
+    "menu_roll": "🎲 Бросок",
+    "menu_vows": "📜 Мои обеты",
+    "menu_tracks": "🗺️ Треки",
+    "menu_character": "👤 Персонаж",
+    "menu_oracle": "🔮 Оракул",
+    "menu_gm": "🎭 GM / Сцена",
+    "menu_help": "❓ Помощь",
+    # move categories
+    "cat_adventure": "🌄 Приключение",
+    "cat_combat": "⚔️ Схватка",
+    "cat_quest": "🎯 Поход",
+    # move names
+    "move_strike": "Удар",
+    "move_clash": "Сшибка",
+    "move_face_danger": "Встретить опасность",
+    "move_secure_advantage": "Закрепить преимущество",
+    "move_gather_information": "Собрать сведения",
+    "move_gather_your_resolve": "Собраться с духом",
+    "move_reach_a_milestone": "Достичь вехи",
+    # move flow
+    "move_cat_title": "Выбери категорию хода:",
+    "move_pick_title": "Выбери ход:",
+    "move_stat_title": "Какой характеристикой бросаешь?",
+    "move_result_header": "⚔️ {move}",
+    "move_effect_header": "Эффект:",
+    "move_no_effect": "Без механических изменений.",
+    # roll / oracle flows
+    "roll_pick_title": "Каким параметром бросок?",
+    "oracle_pick_title": "Насколько это вероятно?",
+    # character submenu
+    "char_menu_title": "Персонаж:",
+    "char_show_btn": "📜 Лист",
+    "char_set_btn": "✏️ Изменить треки",
+    "char_create_btn": "✨ Создать героя",
+    "char_set_title": "Какой трек изменить?",
+    "char_field_now": "{field}: {value}",
+    # vows submenu
+    "vow_menu_title": "Обеты:",
+    "vow_list_title": "Выбери обет:",
+    "vow_act_title": "Что сделать с обетом?",
+    "vow_list_btn": "📜 Список",
+    "vow_new_btn": "✨ Новый обет",
+    "vow_do_progress": "📈 Прогресс",
+    "vow_do_fulfill": "✅ Выполнить",
+    "vow_do_forsake": "🏳 Отказаться",
+    "vnew_pick_rank": "Выбери ранг обета:",
+    "vnew_ask_title": "Введи название обета: (/cancel — отмена)",
+    # tracks submenu
+    "track_menu_title": "Треки группы:",
+    "track_list_title": "Выбери трек:",
+    "track_act_title": "Что сделать с треком?",
+    "track_list_btn": "🗺️ Список",
+    "track_new_btn": "✨ Новый трек",
+    "track_do_hit": "📈 Отметить",
+    "track_do_end": "🏁 Завершить",
+    "track_do_clear": "🧹 Сброс",
+    "tnew_pick_type": "Выбери тип трека:",
+    "tnew_pick_rank": "Выбери ранг трека:",
+    "tnew_ask_title": "Введи название трека: (/cancel — отмена)",
+    # GM submenu
+    "gm_menu_title": "Мастер (GM):",
+    "gm_start_btn": "🗺️ Начать кампанию",
+    "gm_scene_btn": "🎬 Сцена",
+    "gm_npcs_btn": "🎭 NPC",
+    "gm_stop_btn": "⏹ Завершить кампанию",
+})

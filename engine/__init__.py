@@ -33,6 +33,16 @@ from engine.progress import (
     parse_rank,
     progress_per_hit,
 )
+from engine.moves import (
+    MOVES,
+    CharacterDelta,
+    MoveCategory,
+    MoveResult,
+    MoveSpec,
+    apply_effects,
+    moves_in,
+    resolve_move,
+)
 from engine.rolls import (
     ActionRoll,
     Outcome,
@@ -94,4 +104,13 @@ __all__ = [
     "complete",
     "clear_progress",
     "parse_track_type",
+    # moves
+    "MOVES",
+    "MoveCategory",
+    "MoveSpec",
+    "MoveResult",
+    "CharacterDelta",
+    "moves_in",
+    "resolve_move",
+    "apply_effects",
 ]

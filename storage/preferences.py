@@ -7,7 +7,7 @@ logic, so it lives in ``storage`` rather than ``engine``.
 
 from __future__ import annotations
 
-import aiosqlite
+from storage._db import connect
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS preferences (
@@ -27,13 +27,13 @@ class PreferenceStore:
 
     async def init(self) -> None:
         """Create the preferences table if it does not exist."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
             await db.commit()
 
     async def get_language(self, chat_id: int, user_id: int) -> str | None:
         """Return the stored language for (chat, user), or None if unset."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             async with db.execute(
                 "SELECT language FROM preferences "
                 "WHERE chat_id = ? AND user_id = ?",
@@ -46,7 +46,7 @@ class PreferenceStore:
         self, chat_id: int, user_id: int, language: str
     ) -> None:
         """Store the language for (chat, user), inserting or updating."""
-        async with aiosqlite.connect(self._db_path) as db:
+        async with connect(self._db_path) as db:
             await db.execute(
                 "INSERT INTO preferences (chat_id, user_id, language) "
                 "VALUES (?, ?, ?) "

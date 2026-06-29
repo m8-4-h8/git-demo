@@ -9,9 +9,12 @@ language. No game logic lives here.
 
 from __future__ import annotations
 
+import html
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
@@ -21,6 +24,7 @@ from telegram.ext import (
 
 from bot.i18n import (
     BURN_WORDS,
+    GM_ACTIONS,
     LANGS,
     ODDS_ALIASES,
     RANK_ALIASES,
@@ -32,15 +36,19 @@ from bot.i18n import (
     resolve_lang,
     t,
 )
+from bot import menu
 from engine import (
+    MOVES,
     ActionRoll,
     Answer,
     Character,
+    MoveCategory,
     Odds,
     Outcome,
     Rank,
     TrackType,
     YesNoResult,
+    apply_effects,
     ask_yes_no,
     bounds_for,
     burn_momentum,
@@ -56,16 +64,28 @@ from engine import (
     new_character,
     random_table,
     reset_momentum,
+    resolve_move,
     roll_action,
     set_field,
     stat_value,
     table_title,
 )
 from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
+from gm import (
+    GMContext,
+    generate_complication,
+    generate_scene,
+    generate_scenario_options,
+    is_enabled as gm_enabled,
+    push_scene,
+)
+from narrator import NarratorContext, is_enabled as narrator_enabled, narrate
 from storage import CharacterExists
 
-# Conversation states for /new.
+# Conversation states for /new (character creation).
 NAME, EDGE, HEART, IRON, SHADOW, WITS = range(6)
+# Conversation states for vow / track creation.
+VOW_RANK, VOW_TITLE, TRACK_TYPE, TRACK_RANK, TRACK_TITLE = range(6, 11)
 
 _OUTCOME_KEYS = {
     Outcome.STRONG: "outcome_strong",
@@ -95,6 +115,10 @@ def _track_store(context: ContextTypes.DEFAULT_TYPE):
     return context.bot_data["tracks"]
 
 
+def _gm_store(context: ContextTypes.DEFAULT_TYPE):
+    return context.bot_data["gm_state"]
+
+
 def _ids(update: Update) -> tuple[int, int]:
     return update.effective_chat.id, update.effective_user.id
 
@@ -120,6 +144,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     lang = await _lang(update, context)
     await update.message.reply_text(t(lang, "start"), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(
+        t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
+    )
+
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+    lang = await _lang(update, context)
+    await update.message.reply_text(
+        t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -224,6 +260,121 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await store.update(chat_id, user_id, reset_momentum(character))
 
     await update.message.reply_text(_format_roll(result, stat_name, lang))
+    _schedule_narration(update, context, result, stat_name, character.name, lang)
+    _schedule_gm_scene(update, context, result, stat_name, character.name, lang)
+
+
+def _fire_narration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    narrator_context: NarratorContext,
+) -> None:
+    """Fire the narrator without blocking the mechanical reply.
+
+    The mechanics have already been sent; the prose (if any) arrives as a
+    follow-up message 0-8s later. If the narrator is disabled or fails, nothing
+    is sent and no error surfaces to the player.
+    """
+    if not narrator_enabled():
+        return
+    chat = update.effective_chat
+
+    async def _run() -> None:
+        prose = await narrate(narrator_context)
+        if prose:
+            await chat.send_message(
+                f"<i>{html.escape(prose)}</i>", parse_mode=ParseMode.HTML
+            )
+
+    context.application.create_task(_run())
+
+
+def _schedule_narration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: ActionRoll,
+    stat_name: str,
+    character_name: str,
+    lang: str,
+) -> None:
+    """Narrate the outcome of an action roll."""
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name=f"action roll ({stat_name})",
+            outcome=result.outcome,
+            is_match=result.is_match,
+            stat_used=stat_name,
+            character_name=character_name,
+            language=lang,
+        ),
+    )
+
+
+_GM_OUTCOME_WORDS = {
+    Outcome.STRONG: "strong hit",
+    Outcome.WEAK: "weak hit",
+    Outcome.MISS: "miss",
+}
+
+
+def _schedule_gm_scene(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: ActionRoll,
+    stat_name: str,
+    character_name: str,
+    lang: str,
+) -> None:
+    """If a campaign is active, let the GM describe the next scene (non-blocking).
+
+    Fires only when the GM is enabled and the chat has a campaign. A miss draws a
+    complication; otherwise the world simply moves on. The new scene is sent as
+    its own message and persisted (sliding 5-scene history).
+    """
+    if not gm_enabled():
+        return
+    chat = update.effective_chat
+    chat_id, _user_id = _ids(update)
+    gm_store = _gm_store(context)
+    char_store = _store(context)
+    outcome = result.outcome
+
+    async def _run() -> None:
+        state = await gm_store.get(chat_id)
+        if state is None:
+            return  # no active campaign in this chat
+        party = [c.name for c in await char_store.list(chat_id)]
+        gm_context = GMContext(
+            scenario_title=state["scenario_title"],
+            scenario_goal=state["scenario_goal"],
+            current_scene=state["current_scene"],
+            scene_history=state["scene_history"],
+            active_characters=party or ([character_name] if character_name else []),
+            active_vows=[state["scenario_goal"]],
+            npc_memory=state["npc_memory"],
+            language=lang,
+        )
+        if outcome is Outcome.MISS:
+            scene = await generate_complication(gm_context)
+        else:
+            who = character_name or "A hero"
+            last = f"{who} acted with {stat_name} — {_GM_OUTCOME_WORDS[outcome]}"
+            scene = await generate_scene(gm_context, last)
+        if not scene:
+            return
+        await chat.send_message(scene)
+        await gm_store.save(
+            chat_id,
+            scenario_title=state["scenario_title"],
+            scenario_goal=state["scenario_goal"],
+            current_scene=scene,
+            scene_history=push_scene(state["scene_history"], scene),
+            npc_memory=state["npc_memory"],
+        )
+
+    context.application.create_task(_run())
 
 
 # --- oracle commands ---------------------------------------------------------
@@ -377,6 +528,20 @@ async def _vow_fulfill(update, context, lang: str, rest: list[str]) -> None:
         t(lang, note_key),
     ]
     await update.message.reply_text("\n".join(lines))
+    character = await _store(context).get(chat_id, user_id)
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name="fulfill your vow",
+            outcome=result.roll.outcome,
+            is_match=result.roll.is_match,
+            stat_used="heart",
+            character_name=character.name if character else "",
+            active_vow=target.title,
+            language=lang,
+        ),
+    )
 
 
 async def _vow_forsake(update, context, lang: str, rest: list[str]) -> None:
@@ -491,7 +656,7 @@ async def _track_end(update, context, lang: str, rest: list[str]) -> None:
     if not ref:
         await update.message.reply_text(t(lang, "track_usage"))
         return
-    chat_id, _ = _ids(update)
+    chat_id, user_id = _ids(update)
     store = _track_store(context)
     target = _match_target(await store.list(chat_id), ref)
     if target is None:
@@ -511,6 +676,20 @@ async def _track_end(update, context, lang: str, rest: list[str]) -> None:
         t(lang, note_key),
     ]
     await update.message.reply_text("\n".join(lines))
+    character = await _store(context).get(chat_id, user_id)
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name="resolve the encounter",
+            outcome=outcome,
+            is_match=False,
+            stat_used="",
+            character_name=character.name if character else "",
+            active_track=target.title,
+            language=lang,
+        ),
+    )
 
 
 async def _track_clear(update, context, lang: str, rest: list[str]) -> None:
@@ -526,6 +705,670 @@ async def _track_clear(update, context, lang: str, rest: list[str]) -> None:
         return
     await store.update(chat_id, clear_progress(target))
     await update.message.reply_text(t(lang, "track_cleared", title=target.title))
+
+
+# --- AI Game Master ----------------------------------------------------------
+
+
+async def gm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatch /gm <start|scene|npcs|stop>."""
+    if update.message is None:
+        return
+    lang = await _lang(update, context)
+    if not gm_enabled():
+        await update.message.reply_text(t(lang, "gm_disabled"))
+        return
+    args = context.args or []
+    action = GM_ACTIONS.get(args[0].strip().lower()) if args else None
+    if action == "start":
+        await _gm_start(update, context, lang)
+    elif action == "scene":
+        await _gm_scene(update, context, lang)
+    elif action == "npcs":
+        await _gm_npcs(update, context, lang)
+    elif action == "stop":
+        await _gm_stop(update, context, lang)
+    else:
+        await update.message.reply_text(t(lang, "gm_usage"))
+
+
+async def _gm_start(update, context, lang: str) -> None:
+    options = await generate_scenario_options(lang)
+    if not options:
+        await update.message.reply_text(t(lang, "gm_pick_failed"))
+        return
+    context.chat_data["gm_options"] = options
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(opt.title, callback_data=f"gm:pick:{i}")]
+         for i, opt in enumerate(options)]
+    )
+    await update.message.reply_text(t(lang, "gm_pick_header"), reply_markup=keyboard)
+
+
+async def _gm_scene(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    await update.message.reply_text(
+        t(lang, "gm_scene_header") + "\n" + state["current_scene"]
+    )
+
+
+async def _gm_npcs(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    npcs = state["npc_memory"]
+    if not npcs:
+        await update.message.reply_text(t(lang, "gm_npcs_empty"))
+        return
+    lines = [t(lang, "gm_npcs_header")] + [
+        t(lang, "gm_npc_item", name=name, description=desc)
+        for name, desc in npcs.items()
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _gm_stop(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    if await _gm_store(context).get(chat_id) is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    keyboard = InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(t(lang, "gm_yes"), callback_data="gm:stop:yes"),
+            InlineKeyboardButton(t(lang, "gm_no"), callback_data="gm:stop:no"),
+        ]]
+    )
+    await update.message.reply_text(t(lang, "gm_stop_confirm"), reply_markup=keyboard)
+
+
+async def gm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle every ``gm:`` callback (submenu, scenario pick, stop confirmation)."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    lang = await _lang(update, context)
+    parts = query.data.split(":")
+    kind = parts[1] if len(parts) > 1 else ""
+    # Arg-bearing callbacks (gm:pick:<i>, gm:stop:<yes|no>) come first.
+    if kind == "pick" and len(parts) >= 3:
+        await _gm_pick(update, context, lang, parts[2])
+        return
+    if kind == "stop" and len(parts) >= 3:
+        await _gm_stop_confirm(update, context, lang, parts[2])
+        return
+    # Submenu navigation requires the GM to be enabled.
+    if not gm_enabled():
+        await query.edit_message_text(
+            t(lang, "gm_disabled"), reply_markup=menu.home_only(lang)
+        )
+        return
+    if kind == "menu":
+        await query.edit_message_text(
+            t(lang, "gm_menu_title"), reply_markup=menu.gm_menu(lang)
+        )
+    elif kind == "start":
+        await _gm_start_cb(update, context, lang)
+    elif kind == "scene":
+        await _gm_scene_cb(update, context, lang)
+    elif kind == "npcs":
+        await _gm_npcs_cb(update, context, lang)
+    elif kind == "stop":
+        await _gm_stop_cb(update, context, lang)
+
+
+async def _gm_start_cb(update, context, lang: str) -> None:
+    query = update.callback_query
+    options = await generate_scenario_options(lang)
+    if not options:
+        await query.edit_message_text(
+            t(lang, "gm_pick_failed"), reply_markup=menu.back_home(lang, "gm:menu")
+        )
+        return
+    context.chat_data["gm_options"] = options
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(opt.title, callback_data=f"gm:pick:{i}")]
+         for i, opt in enumerate(options)]
+    )
+    await query.edit_message_text(t(lang, "gm_pick_header"), reply_markup=keyboard)
+
+
+async def _gm_scene_cb(update, context, lang: str) -> None:
+    query = update.callback_query
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await query.edit_message_text(
+            t(lang, "gm_no_campaign"), reply_markup=menu.back_home(lang, "gm:menu")
+        )
+        return
+    await query.edit_message_text(
+        t(lang, "gm_scene_header") + "\n" + state["current_scene"],
+        reply_markup=menu.back_home(lang, "gm:menu"),
+    )
+
+
+async def _gm_npcs_cb(update, context, lang: str) -> None:
+    query = update.callback_query
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await query.edit_message_text(
+            t(lang, "gm_no_campaign"), reply_markup=menu.back_home(lang, "gm:menu")
+        )
+        return
+    npcs = state["npc_memory"]
+    if not npcs:
+        await query.edit_message_text(
+            t(lang, "gm_npcs_empty"), reply_markup=menu.back_home(lang, "gm:menu")
+        )
+        return
+    lines = [t(lang, "gm_npcs_header")] + [
+        t(lang, "gm_npc_item", name=name, description=desc)
+        for name, desc in npcs.items()
+    ]
+    await query.edit_message_text(
+        "\n".join(lines), reply_markup=menu.back_home(lang, "gm:menu")
+    )
+
+
+async def _gm_stop_cb(update, context, lang: str) -> None:
+    query = update.callback_query
+    chat_id, _ = _ids(update)
+    if await _gm_store(context).get(chat_id) is None:
+        await query.edit_message_text(
+            t(lang, "gm_no_campaign"), reply_markup=menu.back_home(lang, "gm:menu")
+        )
+        return
+    keyboard = InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(t(lang, "gm_yes"), callback_data="gm:stop:yes"),
+            InlineKeyboardButton(t(lang, "gm_no"), callback_data="gm:stop:no"),
+        ]]
+    )
+    await query.edit_message_text(t(lang, "gm_stop_confirm"), reply_markup=keyboard)
+
+
+async def _gm_pick(update, context, lang: str, idx_str: str) -> None:
+    options = context.chat_data.get("gm_options")
+    try:
+        idx = int(idx_str)
+    except ValueError:
+        idx = -1
+    if not options or not (0 <= idx < len(options)):
+        await update.callback_query.edit_message_text(t(lang, "gm_pick_expired"))
+        return
+    option = options[idx]
+    context.chat_data.pop("gm_options", None)
+
+    chat_id, user_id = _ids(update)
+    await _gm_store(context).save(
+        chat_id,
+        scenario_title=option.title,
+        scenario_goal=option.goal,
+        current_scene=option.opening_scene,
+        scene_history=[],
+        npc_memory={},
+    )
+    # The chosen goal becomes the picker's sworn quest.
+    await _vow_store(context).create(chat_id, user_id, option.goal, Rank.FORMIDABLE)
+
+    await update.callback_query.edit_message_text(
+        t(lang, "gm_started", title=option.title, goal=option.goal)
+        + "\n\n"
+        + option.opening_scene
+    )
+
+
+async def _gm_stop_confirm(update, context, lang: str, choice: str) -> None:
+    chat_id, _ = _ids(update)
+    if choice == "yes":
+        await _gm_store(context).delete(chat_id)
+        await update.callback_query.edit_message_text(t(lang, "gm_stopped"))
+    else:
+        await update.callback_query.edit_message_text(t(lang, "gm_stop_cancelled"))
+
+
+# --- button menu (inline-keyboard UX) ----------------------------------------
+
+# Character tracks the player may adjust via the ±1 stepper.
+SETTABLE_FIELDS = ("health", "spirit", "supply", "momentum")
+
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route every ``menu|move|roll|oracle|char|vow|track|help:`` callback.
+
+    Navigation edits the current message in place; action results (a roll, a
+    move, an oracle answer) are sent as a fresh message carrying a 🏠 Home
+    button. Conversation flows own their own (``cnew|vnew|tnew:``) prefixes.
+    """
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    lang = await _lang(update, context)
+    parts = query.data.split(":")
+    area = parts[0]
+    if area == "menu":
+        await query.edit_message_text(
+            t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
+        )
+    elif area == "help":
+        await query.edit_message_text(
+            t(lang, "help"), reply_markup=menu.help_keyboard(lang)
+        )
+    elif area == "move":
+        await _menu_move(update, context, lang, parts)
+    elif area == "roll":
+        await _menu_roll(update, context, lang, parts)
+    elif area == "oracle":
+        await _menu_oracle(update, context, lang, parts)
+    elif area == "char":
+        await _menu_char(update, context, lang, parts)
+    elif area == "vow":
+        await _menu_vow(update, context, lang, parts)
+    elif area == "track":
+        await _menu_track(update, context, lang, parts)
+
+
+# --- move flow ---------------------------------------------------------------
+
+
+async def _menu_move(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    if sub == "cat" and len(parts) == 2:
+        await query.edit_message_text(
+            t(lang, "move_cat_title"), reply_markup=menu.move_categories(lang)
+        )
+    elif sub == "cat":
+        try:
+            category = MoveCategory(parts[2])
+        except ValueError:
+            return
+        await query.edit_message_text(
+            t(lang, "move_pick_title"),
+            reply_markup=menu.moves_keyboard(lang, category),
+        )
+    elif sub == "mv":
+        spec = MOVES.get(parts[2])
+        if spec is None:
+            return
+        await query.edit_message_text(
+            t(lang, "move_stat_title"),
+            reply_markup=menu.stat_keyboard(
+                lang, f"move:st:{spec.key}", f"move:cat:{spec.category.value}"
+            ),
+        )
+    elif sub == "st" and len(parts) >= 4:
+        await _do_move(update, context, lang, parts[2], parts[3])
+
+
+async def _do_move(update, context, lang: str, move_key: str, stat_name: str) -> None:
+    query = update.callback_query
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    character = await store.get(chat_id, user_id)
+    if character is None:
+        await query.edit_message_text(
+            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+        )
+        return
+    try:
+        result = resolve_move(move_key, character, stat_name)
+    except ValueError:
+        return
+    updated, applied = apply_effects(character, result.delta)
+    if applied:
+        await store.update(chat_id, user_id, updated)
+    await update.effective_chat.send_message(
+        _format_move(result, applied, lang), reply_markup=menu.home_only(lang)
+    )
+    _fire_narration(
+        update,
+        context,
+        NarratorContext(
+            move_name=move_key.replace("_", " "),
+            outcome=result.roll.outcome,
+            is_match=result.roll.is_match,
+            stat_used=stat_name,
+            character_name=character.name,
+            language=lang,
+        ),
+    )
+    _schedule_gm_scene(update, context, result.roll, stat_name, character.name, lang)
+
+
+def _format_move(result, applied, lang: str) -> str:
+    lines = [
+        t(lang, "move_result_header", move=t(lang, f"move_{result.move_key}")),
+        _format_roll(result.roll, result.stat_name, lang),
+    ]
+    if applied:
+        changes = ", ".join(
+            f"{_field_label(field, lang)} {change:+d}"
+            for field, change in applied.changes.items()
+        )
+        lines.append(t(lang, "move_effect_header") + " " + changes)
+    else:
+        lines.append(t(lang, "move_no_effect"))
+    return "\n".join(lines)
+
+
+# --- roll flow ---------------------------------------------------------------
+
+
+async def _menu_roll(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    if sub == "menu":
+        await query.edit_message_text(
+            t(lang, "roll_pick_title"),
+            reply_markup=menu.stat_keyboard(lang, "roll:st", menu.HOME),
+        )
+    elif sub == "st" and len(parts) >= 3:
+        stat_name = parts[2]
+        chat_id, user_id = _ids(update)
+        character = await _store(context).get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "no_character"), reply_markup=menu.home_only(lang)
+            )
+            return
+        result = roll_action(stat_value(character, stat_name), 0)
+        await update.effective_chat.send_message(
+            _format_roll(result, stat_name, lang), reply_markup=menu.home_only(lang)
+        )
+        _schedule_narration(update, context, result, stat_name, character.name, lang)
+        _schedule_gm_scene(update, context, result, stat_name, character.name, lang)
+
+
+# --- oracle flow -------------------------------------------------------------
+
+
+async def _menu_oracle(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    if sub == "menu":
+        await query.edit_message_text(
+            t(lang, "oracle_pick_title"), reply_markup=menu.oracle_keyboard(lang)
+        )
+    elif sub == "do" and len(parts) >= 3:
+        result = ask_yes_no(parts[2])
+        await update.effective_chat.send_message(
+            _format_ask(result, "", lang), reply_markup=menu.home_only(lang)
+        )
+
+
+# --- character flow ----------------------------------------------------------
+
+
+async def _menu_char(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    if sub == "menu":
+        character = await store.get(chat_id, user_id)
+        await query.edit_message_text(
+            t(lang, "char_menu_title"),
+            reply_markup=menu.character_menu(lang, character is not None),
+        )
+    elif sub == "show":
+        character = await store.get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "no_character"),
+                reply_markup=menu.character_menu(lang, False),
+            )
+            return
+        await query.edit_message_text(
+            _format_sheet(character, lang),
+            reply_markup=menu.back_home(lang, "char:menu"),
+        )
+    elif sub == "set":
+        character = await store.get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "no_character"),
+                reply_markup=menu.character_menu(lang, False),
+            )
+            return
+        await query.edit_message_text(
+            t(lang, "char_set_title"),
+            reply_markup=menu.char_set_fields(lang, SETTABLE_FIELDS),
+        )
+    elif sub == "setf" and len(parts) >= 3:
+        character = await store.get(chat_id, user_id)
+        if character is not None:
+            await _render_stepper(query, character, parts[2], lang)
+    elif sub == "adj" and len(parts) >= 4:
+        field = parts[2]
+        try:
+            delta = int(parts[3])
+        except ValueError:
+            return
+        character = await store.get(chat_id, user_id)
+        if character is None:
+            return
+        low, high = bounds_for(field)
+        current = getattr(character, field)
+        new_value = max(low, min(high, current + delta))
+        if new_value != current:
+            character = set_field(character, field, new_value)
+            await store.update(chat_id, user_id, character)
+        await _render_stepper(query, character, field, lang)
+
+
+async def _render_stepper(query, character, field: str, lang: str) -> None:
+    await query.edit_message_text(
+        t(lang, "char_field_now",
+          field=_field_label(field, lang), value=getattr(character, field)),
+        reply_markup=menu.char_stepper(lang, field),
+    )
+
+
+# --- vow flow ----------------------------------------------------------------
+
+
+async def _menu_vow(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    chat_id, user_id = _ids(update)
+    store = _vow_store(context)
+    if sub == "menu":
+        await query.edit_message_text(
+            t(lang, "vow_menu_title"), reply_markup=menu.vow_menu(lang)
+        )
+    elif sub == "list":
+        vows = await store.list(chat_id, user_id)
+        if not vows:
+            await query.edit_message_text(
+                t(lang, "vow_list_empty"),
+                reply_markup=menu.back_home(lang, "vow:menu"),
+            )
+            return
+        await query.edit_message_text(
+            t(lang, "vow_list_title"),
+            reply_markup=menu.vow_list_keyboard(lang, vows),
+        )
+    elif sub == "act" and len(parts) >= 3:
+        await query.edit_message_text(
+            t(lang, "vow_act_title"),
+            reply_markup=menu.vow_actions(lang, int(parts[2])),
+        )
+    elif sub == "do" and len(parts) >= 4:
+        await _vow_do(update, context, lang, parts[2], int(parts[3]))
+
+
+async def _vow_do(update, context, lang: str, action: str, vow_id: int) -> None:
+    query = update.callback_query
+    chat_id, user_id = _ids(update)
+    store = _vow_store(context)
+    target = await store.get(chat_id, user_id, vow_id)
+    if target is None:
+        await query.edit_message_text(
+            t(lang, "vow_not_found", ref=f"#{vow_id}"),
+            reply_markup=menu.back_home(lang, "vow:menu"),
+        )
+        return
+    if action == "progress":
+        updated = mark_vow_progress(target, 1)
+        await store.update(chat_id, user_id, updated)
+        await query.edit_message_text(
+            t(lang, "vow_progress_done", title=updated.title,
+              bar=_progress_bar(updated.progress), progress=updated.progress),
+            reply_markup=menu.back_home(lang, "vow:list"),
+        )
+    elif action == "fulfill":
+        result = fulfillment_roll(target)
+        if result.vow.fulfilled:
+            await store.update(chat_id, user_id, result.vow)
+        challenge_a, challenge_b = result.roll.challenge_dice
+        note_key = {
+            Outcome.STRONG: "vow_fulfilled_strong",
+            Outcome.WEAK: "vow_fulfilled_weak",
+            Outcome.MISS: "vow_fulfill_miss",
+        }[result.roll.outcome]
+        lines = [
+            t(lang, "vow_fulfill_header", title=target.title),
+            t(lang, "vow_fulfill_line", score=result.roll.action_score,
+              a=challenge_a, b=challenge_b,
+              result=_outcome_label(result.roll.outcome, lang)),
+            t(lang, note_key),
+        ]
+        await query.edit_message_text(
+            "\n".join(lines), reply_markup=menu.back_home(lang, "vow:menu")
+        )
+        character = await _store(context).get(chat_id, user_id)
+        _fire_narration(
+            update,
+            context,
+            NarratorContext(
+                move_name="fulfill your vow",
+                outcome=result.roll.outcome,
+                is_match=result.roll.is_match,
+                stat_used="heart",
+                character_name=character.name if character else "",
+                active_vow=target.title,
+                language=lang,
+            ),
+        )
+    elif action == "forsake":
+        await store.update(chat_id, user_id, forsake(target))
+        char_store = _store(context)
+        character = await char_store.get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "vow_forsaken_no_char", title=target.title),
+                reply_markup=menu.back_home(lang, "vow:menu"),
+            )
+            return
+        new_spirit = max(TRACK_MIN, character.spirit - 1)
+        await char_store.update(
+            chat_id, user_id, set_field(character, "spirit", new_spirit)
+        )
+        await query.edit_message_text(
+            t(lang, "vow_forsaken_spirit", title=target.title, spirit=new_spirit),
+            reply_markup=menu.back_home(lang, "vow:menu"),
+        )
+
+
+# --- track flow --------------------------------------------------------------
+
+
+async def _menu_track(update, context, lang: str, parts: list[str]) -> None:
+    query = update.callback_query
+    sub = parts[1] if len(parts) > 1 else ""
+    chat_id, _ = _ids(update)
+    store = _track_store(context)
+    if sub == "menu":
+        await query.edit_message_text(
+            t(lang, "track_menu_title"), reply_markup=menu.track_menu(lang)
+        )
+    elif sub == "list":
+        tracks = await store.list(chat_id)
+        if not tracks:
+            await query.edit_message_text(
+                t(lang, "track_list_empty"),
+                reply_markup=menu.back_home(lang, "track:menu"),
+            )
+            return
+        await query.edit_message_text(
+            t(lang, "track_list_title"),
+            reply_markup=menu.track_list_keyboard(lang, tracks),
+        )
+    elif sub == "act" and len(parts) >= 3:
+        await query.edit_message_text(
+            t(lang, "track_act_title"),
+            reply_markup=menu.track_actions(lang, int(parts[2])),
+        )
+    elif sub == "do" and len(parts) >= 4:
+        await _track_do(update, context, lang, parts[2], int(parts[3]))
+
+
+async def _track_do(update, context, lang: str, action: str, track_id: int) -> None:
+    query = update.callback_query
+    chat_id, user_id = _ids(update)
+    store = _track_store(context)
+    target = await store.get(chat_id, track_id)
+    if target is None:
+        await query.edit_message_text(
+            t(lang, "track_not_found", ref=f"#{track_id}"),
+            reply_markup=menu.back_home(lang, "track:menu"),
+        )
+        return
+    if action == "hit":
+        updated = mark_track_progress(target, 1)
+        await store.update(chat_id, updated)
+        await query.edit_message_text(
+            t(lang, "track_hit_done", title=updated.title,
+              bar=_progress_bar(updated.progress), progress=updated.progress),
+            reply_markup=menu.back_home(lang, "track:list"),
+        )
+    elif action == "end":
+        outcome = end_encounter(target)
+        await store.update(chat_id, complete(target))
+        note_key = {
+            Outcome.STRONG: "track_end_strong",
+            Outcome.WEAK: "track_end_weak",
+            Outcome.MISS: "track_end_miss",
+        }[outcome]
+        lines = [
+            t(lang, "track_end_header", title=target.title),
+            t(lang, "track_end_line", bar=_progress_bar(target.progress),
+              progress=target.progress, result=_outcome_label(outcome, lang)),
+            t(lang, note_key),
+        ]
+        await query.edit_message_text(
+            "\n".join(lines), reply_markup=menu.back_home(lang, "track:menu")
+        )
+        character = await _store(context).get(chat_id, user_id)
+        _fire_narration(
+            update,
+            context,
+            NarratorContext(
+                move_name="resolve the encounter",
+                outcome=outcome,
+                is_match=False,
+                stat_used="",
+                character_name=character.name if character else "",
+                active_track=target.title,
+                language=lang,
+            ),
+        )
+    elif action == "clear":
+        await store.update(chat_id, clear_progress(target))
+        await query.edit_message_text(
+            t(lang, "track_cleared", title=target.title),
+            reply_markup=menu.back_home(lang, "track:list"),
+        )
 
 
 # --- language ----------------------------------------------------------------
@@ -636,6 +1479,25 @@ async def new_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return NAME
 
 
+async def new_start_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry point for character creation via the 👤 Character → ✨ button."""
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    chat_id, user_id = _ids(update)
+    if await _store(context).get(chat_id, user_id) is not None:
+        await query.edit_message_text(
+            t(lang, "new_already_exists"),
+            reply_markup=menu.back_home(lang, "char:menu"),
+        )
+        return ConversationHandler.END
+    context.user_data["new_char"] = {}
+    await query.edit_message_text(t(lang, "new_intro"))
+    return NAME
+
+
 async def new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message is None:
         return NAME
@@ -644,13 +1506,15 @@ async def new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not name:
         await update.message.reply_text(t(lang, "new_empty_name"))
         return NAME
-    context.user_data["new_char"]["name"] = name
-    await update.message.reply_text(_stat_prompt("edge", lang))
+    context.user_data.setdefault("new_char", {})["name"] = name
+    await update.message.reply_text(
+        _stat_prompt("edge", lang), reply_markup=menu.stat_value_keyboard("cnew:edge")
+    )
     return EDGE
 
 
 def _stat_step(stat_name: str, this_state: int, next_prompt: str, next_state):
-    """Build a conversation step that collects one stat in range 1-3."""
+    """Build a typed conversation step that collects one stat in range 1-3."""
 
     async def step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if update.message is None:
@@ -665,10 +1529,42 @@ def _stat_step(stat_name: str, this_state: int, next_prompt: str, next_state):
             await update.message.reply_text(_bad_stat(stat_name, lang))
             return this_state
 
-        context.user_data["new_char"][stat_name] = value
+        context.user_data.setdefault("new_char", {})[stat_name] = value
         if next_state is None:
             return await _finish_new(update, context)
-        await update.message.reply_text(_stat_prompt(next_prompt, lang))
+        await update.message.reply_text(
+            _stat_prompt(next_prompt, lang),
+            reply_markup=menu.stat_value_keyboard(f"cnew:{next_prompt}"),
+        )
+        return next_state
+
+    return step
+
+
+def _stat_button_step(stat_name: str, this_state: int, next_prompt: str, next_state):
+    """Build a button conversation step (1/2/3 taps) that collects one stat."""
+
+    async def step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        query = update.callback_query
+        if query is None or query.data is None:
+            return this_state
+        await query.answer()
+        lang = await _lang(update, context)
+        try:
+            value = int(query.data.split(":")[2])
+        except (ValueError, IndexError):
+            return this_state
+        if not STAT_MIN <= value <= STAT_MAX:
+            return this_state
+
+        context.user_data.setdefault("new_char", {})[stat_name] = value
+        if next_state is None:
+            await query.edit_message_reply_markup(reply_markup=None)
+            return await _finish_new(update, context)
+        await query.edit_message_text(
+            _stat_prompt(next_prompt, lang),
+            reply_markup=menu.stat_value_keyboard(f"cnew:{next_prompt}"),
+        )
         return next_state
 
     return step
@@ -680,54 +1576,207 @@ new_iron = _stat_step("iron", IRON, "shadow", SHADOW)
 new_shadow = _stat_step("shadow", SHADOW, "wits", WITS)
 new_wits = _stat_step("wits", WITS, "", None)
 
+new_edge_btn = _stat_button_step("edge", EDGE, "heart", HEART)
+new_heart_btn = _stat_button_step("heart", HEART, "iron", IRON)
+new_iron_btn = _stat_button_step("iron", IRON, "shadow", SHADOW)
+new_shadow_btn = _stat_button_step("shadow", SHADOW, "wits", WITS)
+new_wits_btn = _stat_button_step("wits", WITS, "", None)
+
 
 async def _finish_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Create and persist the hero, then send the sheet (works from text or button)."""
     lang = await _lang(update, context)
     data = context.user_data.pop("new_char", {})
+    chat = update.effective_chat
     try:
         character = new_character(
             data["name"], data["edge"], data["heart"],
             data["iron"], data["shadow"], data["wits"],
         )
     except (KeyError, ValueError) as error:
-        await update.message.reply_text(t(lang, "new_failed", error=error))
+        await chat.send_message(t(lang, "new_failed", error=error))
         return ConversationHandler.END
 
     chat_id, user_id = _ids(update)
     try:
         await _store(context).create(chat_id, user_id, character)
     except CharacterExists:
-        await update.message.reply_text(t(lang, "new_already_exists"))
+        await chat.send_message(t(lang, "new_already_exists"))
         return ConversationHandler.END
 
-    await update.message.reply_text(
-        t(lang, "new_created") + "\n\n" + _format_sheet(character, lang)
+    await chat.send_message(
+        t(lang, "new_created") + "\n\n" + _format_sheet(character, lang),
+        reply_markup=menu.home_only(lang),
     )
     return ConversationHandler.END
 
 
-async def new_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Shared /cancel for every guided creation flow."""
     lang = await _lang(update, context)
-    context.user_data.pop("new_char", None)
+    for key in ("new_char", "new_vow", "new_track"):
+        context.user_data.pop(key, None)
     if update.message is not None:
         await update.message.reply_text(t(lang, "new_cancelled"))
     return ConversationHandler.END
 
 
 def build_new_handler() -> ConversationHandler:
-    """Build the /new conversation handler (keyed per chat and per user)."""
+    """Build the /new conversation handler (command and button entry points)."""
     text = filters.TEXT & ~filters.COMMAND
     return ConversationHandler(
-        entry_points=[CommandHandler("new", new_start)],
+        entry_points=[
+            CommandHandler("new", new_start),
+            CallbackQueryHandler(new_start_cb, pattern=r"^cnew:start$"),
+        ],
         states={
             NAME: [MessageHandler(text, new_name)],
-            EDGE: [MessageHandler(text, new_edge)],
-            HEART: [MessageHandler(text, new_heart)],
-            IRON: [MessageHandler(text, new_iron)],
-            SHADOW: [MessageHandler(text, new_shadow)],
-            WITS: [MessageHandler(text, new_wits)],
+            EDGE: [CallbackQueryHandler(new_edge_btn, pattern=r"^cnew:edge:"),
+                   MessageHandler(text, new_edge)],
+            HEART: [CallbackQueryHandler(new_heart_btn, pattern=r"^cnew:heart:"),
+                    MessageHandler(text, new_heart)],
+            IRON: [CallbackQueryHandler(new_iron_btn, pattern=r"^cnew:iron:"),
+                   MessageHandler(text, new_iron)],
+            SHADOW: [CallbackQueryHandler(new_shadow_btn, pattern=r"^cnew:shadow:"),
+                     MessageHandler(text, new_shadow)],
+            WITS: [CallbackQueryHandler(new_wits_btn, pattern=r"^cnew:wits:"),
+                   MessageHandler(text, new_wits)],
         },
-        fallbacks=[CommandHandler("cancel", new_cancel)],
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
+# --- vow / track creation conversations (button-driven) ----------------------
+
+
+async def vnew_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    context.user_data["new_vow"] = {}
+    await query.edit_message_text(
+        t(lang, "vnew_pick_rank"), reply_markup=menu.rank_keyboard(lang, "vnew:rank")
+    )
+    return VOW_RANK
+
+
+async def vnew_rank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None or query.data is None:
+        return VOW_RANK
+    await query.answer()
+    lang = await _lang(update, context)
+    context.user_data.setdefault("new_vow", {})["rank"] = query.data.split(":")[2]
+    await query.edit_message_text(t(lang, "vnew_ask_title"))
+    return VOW_TITLE
+
+
+async def vnew_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return VOW_TITLE
+    lang = await _lang(update, context)
+    title = (update.message.text or "").strip()
+    if not title:
+        await update.message.reply_text(t(lang, "vnew_ask_title"))
+        return VOW_TITLE
+    data = context.user_data.pop("new_vow", {})
+    chat_id, user_id = _ids(update)
+    created = await _vow_store(context).create(
+        chat_id, user_id, title, Rank(data.get("rank", "troublesome"))
+    )
+    await update.message.reply_text(
+        t(lang, "vow_created") + "\n\n" + _format_vow(created, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_vow_handler() -> ConversationHandler:
+    """Vow creation: pick rank (buttons) → type title."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(vnew_start, pattern=r"^vnew:start$")],
+        states={
+            VOW_RANK: [CallbackQueryHandler(vnew_rank, pattern=r"^vnew:rank:")],
+            VOW_TITLE: [MessageHandler(text, vnew_title)],
+        },
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
+async def tnew_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    context.user_data["new_track"] = {}
+    await query.edit_message_text(
+        t(lang, "tnew_pick_type"),
+        reply_markup=menu.track_type_keyboard(lang, "tnew:type"),
+    )
+    return TRACK_TYPE
+
+
+async def tnew_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None or query.data is None:
+        return TRACK_TYPE
+    await query.answer()
+    lang = await _lang(update, context)
+    context.user_data.setdefault("new_track", {})["type"] = query.data.split(":")[2]
+    await query.edit_message_text(
+        t(lang, "tnew_pick_rank"), reply_markup=menu.rank_keyboard(lang, "tnew:rank")
+    )
+    return TRACK_RANK
+
+
+async def tnew_rank(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None or query.data is None:
+        return TRACK_RANK
+    await query.answer()
+    lang = await _lang(update, context)
+    context.user_data.setdefault("new_track", {})["rank"] = query.data.split(":")[2]
+    await query.edit_message_text(t(lang, "tnew_ask_title"))
+    return TRACK_TITLE
+
+
+async def tnew_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return TRACK_TITLE
+    lang = await _lang(update, context)
+    title = (update.message.text or "").strip()
+    if not title:
+        await update.message.reply_text(t(lang, "tnew_ask_title"))
+        return TRACK_TITLE
+    data = context.user_data.pop("new_track", {})
+    chat_id, _ = _ids(update)
+    created = await _track_store(context).create(
+        chat_id, title,
+        TrackType(data.get("type", "custom")),
+        Rank(data.get("rank", "troublesome")),
+    )
+    await update.message.reply_text(
+        t(lang, "track_created") + "\n\n" + _format_track(created, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_track_handler() -> ConversationHandler:
+    """Track creation: pick type (buttons) → rank (buttons) → type title."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(tnew_start, pattern=r"^tnew:start$")],
+        states={
+            TRACK_TYPE: [CallbackQueryHandler(tnew_type, pattern=r"^tnew:type:")],
+            TRACK_RANK: [CallbackQueryHandler(tnew_rank, pattern=r"^tnew:rank:")],
+            TRACK_TITLE: [MessageHandler(text, tnew_title)],
+        },
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
     )
 
 
