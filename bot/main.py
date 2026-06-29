@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 from bot.handlers import (
     ask,
     build_new_handler,
+    build_track_handler,
+    build_vow_handler,
     gm,
     gm_callback,
     guide,
@@ -32,6 +34,8 @@ from bot.handlers import (
     language_callback,
     language_command,
     me,
+    menu_callback,
+    menu_command,
     oracle,
     roll,
     set_value,
@@ -106,11 +110,15 @@ def build_application(
     application.bot_data["gm_state"] = gm_state
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("guide", guide))
     application.add_handler(CommandHandler("tutorial", tutorial))
     application.add_handler(CommandHandler("language", language_command))
+    # Guided creation flows (command + button entry points).
     application.add_handler(build_new_handler())
+    application.add_handler(build_vow_handler())
+    application.add_handler(build_track_handler())
     application.add_handler(CommandHandler("me", me))
     application.add_handler(CommandHandler("set", set_value))
     application.add_handler(CommandHandler("roll", roll))
@@ -119,6 +127,12 @@ def build_application(
     application.add_handler(CommandHandler("vow", vow))
     application.add_handler(CommandHandler("track", track))
     application.add_handler(CommandHandler("gm", gm))
+    # Inline-keyboard navigation (the button-first UX).
+    application.add_handler(
+        CallbackQueryHandler(
+            menu_callback, pattern=r"^(menu|move|roll|oracle|char|vow|track|help):"
+        )
+    )
     application.add_handler(CallbackQueryHandler(language_callback, pattern=r"^lang:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern=r"^tut:"))
     application.add_handler(CallbackQueryHandler(gm_callback, pattern=r"^gm:"))

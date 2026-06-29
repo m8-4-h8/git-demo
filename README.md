@@ -3,9 +3,18 @@
 A Telegram bot for the GM-less tabletop RPG **Ironsworn** — for solo and co-op
 play with friends in a group chat. This is **v0**.
 
+## Playing with buttons
+
+The bot is **button-first**: `/start` (or `/menu`, or the 🏠 Menu button) opens
+an inline-keyboard main menu, and you navigate everything by tapping — make a
+move, roll, ask the Oracle, manage vows/tracks/character, or play with the GM.
+Every screen has 🔙 Back and 🏠 Menu. The only things you ever type are a hero's
+name and a vow/track title. The slash commands below all still work as a
+power-user fallback.
+
 ## Commands
 
-- `/start` — friendly intro to what the game is
+- `/start`, `/menu` — friendly intro + the main button menu
 - `/tutorial` — interactive, paged walkthrough
 - `/guide`, `/help` — how to play and the command list
 - `/new` — create your character (a short step-by-step dialog)

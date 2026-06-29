@@ -23,9 +23,21 @@ The frontend is Telegram, but the game core is frontend-independent.
 - **`storage/`** is the persistence layer (async SQLite via `aiosqlite`). It may
   import `engine` (e.g. the `Character` model); `engine` never imports it.
   Characters are keyed by `(chat_id, user_id)` for co-op in one chat.
+- **`engine/moves.py`** holds the named-moves layer: a small v1 set of moves
+  (Strike, Face Danger, …) grouped by category (Adventure/Combat/Quest), each
+  with per-outcome effects on the character's tracks/momentum. `resolve_move`
+  rolls a player-chosen stat and `apply_effects` clamps & applies the delta —
+  still pure, deterministic, no telegram/storage.
 - **`bot/`** is the thin Telegram layer: parse the command → call `engine` /
   `storage` → format the reply. **No game logic in handlers.** The store is
   built in `bot/main.py` and shared via `application.bot_data["store"]`.
+  The UX is **button-first**: `/start` (and a 🏠 Menu button) opens an
+  InlineKeyboard main menu; players navigate everything via buttons (with 🔙 Back
+  and 🏠 Home on every screen), typing only a hero's name and a vow/track title.
+  Slash commands stay as a hidden power-user fallback. Keyboard builders and the
+  namespaced `callback_data` scheme (`area:action[:arg…]`) live in `bot/menu.py`;
+  a single `menu_callback` routes `menu|move|roll|oracle|char|vow|track|help:`,
+  while the guided creation flows own the `cnew|vnew|tnew:` prefixes.
 - **`narrator/`** is an OPTIONAL LLM prose layer (Anthropic). After a mechanical
   outcome (a roll, a vow fulfillment, an encounter) it writes 2-3 sentences of
   flavor — it **describes, never decides**
@@ -59,7 +71,7 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 
 ## Layout
 ```
-engine/   # pure game core (rules), no telegram/storage imports
+engine/   # pure game core (rules incl. moves layer), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
 narrator/ # optional LLM prose layer (Anthropic); describes, never decides
