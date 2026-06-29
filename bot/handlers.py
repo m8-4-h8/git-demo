@@ -23,6 +23,7 @@ from telegram.ext import (
 
 from bot.i18n import (
     BURN_WORDS,
+    GM_ACTIONS,
     LANGS,
     ODDS_ALIASES,
     RANK_ALIASES,
@@ -64,6 +65,14 @@ from engine import (
     table_title,
 )
 from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
+from gm import (
+    GMContext,
+    generate_complication,
+    generate_scene,
+    generate_scenario_options,
+    is_enabled as gm_enabled,
+    push_scene,
+)
 from narrator import NarratorContext, is_enabled as narrator_enabled, narrate
 from storage import CharacterExists
 
@@ -96,6 +105,10 @@ def _vow_store(context: ContextTypes.DEFAULT_TYPE):
 
 def _track_store(context: ContextTypes.DEFAULT_TYPE):
     return context.bot_data["tracks"]
+
+
+def _gm_store(context: ContextTypes.DEFAULT_TYPE):
+    return context.bot_data["gm_state"]
 
 
 def _ids(update: Update) -> tuple[int, int]:
@@ -228,6 +241,7 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(_format_roll(result, stat_name, lang))
     _schedule_narration(update, context, result, stat_name, character.name, lang)
+    _schedule_gm_scene(update, context, result, stat_name, character.name, lang)
 
 
 def _fire_narration(
@@ -276,6 +290,71 @@ def _schedule_narration(
             language=lang,
         ),
     )
+
+
+_GM_OUTCOME_WORDS = {
+    Outcome.STRONG: "strong hit",
+    Outcome.WEAK: "weak hit",
+    Outcome.MISS: "miss",
+}
+
+
+def _schedule_gm_scene(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    result: ActionRoll,
+    stat_name: str,
+    character_name: str,
+    lang: str,
+) -> None:
+    """If a campaign is active, let the GM describe the next scene (non-blocking).
+
+    Fires only when the GM is enabled and the chat has a campaign. A miss draws a
+    complication; otherwise the world simply moves on. The new scene is sent as
+    its own message and persisted (sliding 5-scene history).
+    """
+    if not gm_enabled():
+        return
+    chat = update.effective_chat
+    chat_id, _user_id = _ids(update)
+    gm_store = _gm_store(context)
+    char_store = _store(context)
+    outcome = result.outcome
+
+    async def _run() -> None:
+        state = await gm_store.get(chat_id)
+        if state is None:
+            return  # no active campaign in this chat
+        party = [c.name for c in await char_store.list(chat_id)]
+        gm_context = GMContext(
+            scenario_title=state["scenario_title"],
+            scenario_goal=state["scenario_goal"],
+            current_scene=state["current_scene"],
+            scene_history=state["scene_history"],
+            active_characters=party or ([character_name] if character_name else []),
+            active_vows=[state["scenario_goal"]],
+            npc_memory=state["npc_memory"],
+            language=lang,
+        )
+        if outcome is Outcome.MISS:
+            scene = await generate_complication(gm_context)
+        else:
+            who = character_name or "A hero"
+            last = f"{who} acted with {stat_name} — {_GM_OUTCOME_WORDS[outcome]}"
+            scene = await generate_scene(gm_context, last)
+        if not scene:
+            return
+        await chat.send_message(scene)
+        await gm_store.save(
+            chat_id,
+            scenario_title=state["scenario_title"],
+            scenario_goal=state["scenario_goal"],
+            current_scene=scene,
+            scene_history=push_scene(state["scene_history"], scene),
+            npc_memory=state["npc_memory"],
+        )
+
+    context.application.create_task(_run())
 
 
 # --- oracle commands ---------------------------------------------------------
@@ -606,6 +685,143 @@ async def _track_clear(update, context, lang: str, rest: list[str]) -> None:
         return
     await store.update(chat_id, clear_progress(target))
     await update.message.reply_text(t(lang, "track_cleared", title=target.title))
+
+
+# --- AI Game Master ----------------------------------------------------------
+
+
+async def gm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Dispatch /gm <start|scene|npcs|stop>."""
+    if update.message is None:
+        return
+    lang = await _lang(update, context)
+    if not gm_enabled():
+        await update.message.reply_text(t(lang, "gm_disabled"))
+        return
+    args = context.args or []
+    action = GM_ACTIONS.get(args[0].strip().lower()) if args else None
+    if action == "start":
+        await _gm_start(update, context, lang)
+    elif action == "scene":
+        await _gm_scene(update, context, lang)
+    elif action == "npcs":
+        await _gm_npcs(update, context, lang)
+    elif action == "stop":
+        await _gm_stop(update, context, lang)
+    else:
+        await update.message.reply_text(t(lang, "gm_usage"))
+
+
+async def _gm_start(update, context, lang: str) -> None:
+    options = await generate_scenario_options(lang)
+    if not options:
+        await update.message.reply_text(t(lang, "gm_pick_failed"))
+        return
+    context.chat_data["gm_options"] = options
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(opt.title, callback_data=f"gm:pick:{i}")]
+         for i, opt in enumerate(options)]
+    )
+    await update.message.reply_text(t(lang, "gm_pick_header"), reply_markup=keyboard)
+
+
+async def _gm_scene(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    await update.message.reply_text(
+        t(lang, "gm_scene_header") + "\n" + state["current_scene"]
+    )
+
+
+async def _gm_npcs(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    state = await _gm_store(context).get(chat_id)
+    if state is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    npcs = state["npc_memory"]
+    if not npcs:
+        await update.message.reply_text(t(lang, "gm_npcs_empty"))
+        return
+    lines = [t(lang, "gm_npcs_header")] + [
+        t(lang, "gm_npc_item", name=name, description=desc)
+        for name, desc in npcs.items()
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _gm_stop(update, context, lang: str) -> None:
+    chat_id, _ = _ids(update)
+    if await _gm_store(context).get(chat_id) is None:
+        await update.message.reply_text(t(lang, "gm_no_campaign"))
+        return
+    keyboard = InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(t(lang, "gm_yes"), callback_data="gm:stop:yes"),
+            InlineKeyboardButton(t(lang, "gm_no"), callback_data="gm:stop:no"),
+        ]]
+    )
+    await update.message.reply_text(t(lang, "gm_stop_confirm"), reply_markup=keyboard)
+
+
+async def gm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle gm: callbacks (scenario pick, stop confirmation)."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    await query.answer()
+    lang = await _lang(update, context)
+    parts = query.data.split(":")
+    if len(parts) < 3:
+        return
+    kind, value = parts[1], parts[2]
+    if kind == "pick":
+        await _gm_pick(update, context, lang, value)
+    elif kind == "stop":
+        await _gm_stop_confirm(update, context, lang, value)
+
+
+async def _gm_pick(update, context, lang: str, idx_str: str) -> None:
+    options = context.chat_data.get("gm_options")
+    try:
+        idx = int(idx_str)
+    except ValueError:
+        idx = -1
+    if not options or not (0 <= idx < len(options)):
+        await update.callback_query.edit_message_text(t(lang, "gm_pick_expired"))
+        return
+    option = options[idx]
+    context.chat_data.pop("gm_options", None)
+
+    chat_id, user_id = _ids(update)
+    await _gm_store(context).save(
+        chat_id,
+        scenario_title=option.title,
+        scenario_goal=option.goal,
+        current_scene=option.opening_scene,
+        scene_history=[],
+        npc_memory={},
+    )
+    # The chosen goal becomes the picker's sworn quest.
+    await _vow_store(context).create(chat_id, user_id, option.goal, Rank.FORMIDABLE)
+
+    await update.callback_query.edit_message_text(
+        t(lang, "gm_started", title=option.title, goal=option.goal)
+        + "\n\n"
+        + option.opening_scene
+    )
+
+
+async def _gm_stop_confirm(update, context, lang: str, choice: str) -> None:
+    chat_id, _ = _ids(update)
+    if choice == "yes":
+        await _gm_store(context).delete(chat_id)
+        await update.callback_query.edit_message_text(t(lang, "gm_stopped"))
+    else:
+        await update.callback_query.edit_message_text(t(lang, "gm_stop_cancelled"))
 
 
 # --- language ----------------------------------------------------------------

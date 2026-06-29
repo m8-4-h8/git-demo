@@ -76,6 +76,14 @@ TRACK_ACTIONS = {
     "clear": "clear", "сброс": "clear", "сбросить": "clear",
 }
 
+# /gm sub-commands -> canonical action.
+GM_ACTIONS = {
+    "start": "start", "старт": "start", "начать": "start",
+    "scene": "scene", "сцена": "scene",
+    "npcs": "npcs", "нпс": "npcs", "персонажи": "npcs",
+    "stop": "stop", "стоп": "stop", "завершить": "stop",
+}
+
 
 def resolve_lang(stored: str | None, tg_code: str | None) -> str:
     """Pick the language: stored choice, else Telegram client code, else EN."""
@@ -122,6 +130,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "/set <track> <value> — change health/spirit/supply/momentum\n"
             "/vow <new|list|progress|fulfill|forsake> — sworn quests\n"
             "/track <new|list|hit|end|clear> — group progress tracks\n"
+            "/gm <start|scene|npcs|stop> — play with an AI Game Master\n"
             "/tutorial — interactive walkthrough\n"
             "/guide — how to play\n"
             "/language — switch RU/EN\n\n"
@@ -352,6 +361,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "/set <трек> <значение> — изменить здоровье/дух/припасы/импульс\n"
             "/vow <new|list|progress|fulfill|forsake> — обеты (клятвы)\n"
             "/track <new|list|hit|end|clear> — треки прогресса группы\n"
+            "/gm <start|scene|npcs|stop> — игра с AI-Мастером\n"
             "/tutorial — интерактивный разбор\n"
             "/guide — как играть\n"
             "/language — переключить RU/EN\n\n"
@@ -554,3 +564,42 @@ TEXTS: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+
+# --- AI Game Master strings (gm/ layer) ----------------------------------------
+TEXTS["en"].update({
+    "gm_usage": "Usage: /gm start | scene | npcs | stop",
+    "gm_disabled": "The Game Master is turned off.",
+    "gm_pick_header": "🎲 Choose your campaign:",
+    "gm_pick_failed": "The Game Master is silent right now — try again in a moment.",
+    "gm_pick_expired": "Those options expired. Run /gm start again.",
+    "gm_started": "🗺️ Campaign begun: {title}\nA vow is sworn: {goal}",
+    "gm_scene_header": "🗺️ Current scene:",
+    "gm_no_campaign": "No active campaign. Start one with /gm start.",
+    "gm_npcs_header": "🎭 NPCs the GM remembers:",
+    "gm_npcs_empty": "The GM hasn't named any NPCs yet.",
+    "gm_npc_item": "• {name}: {description}",
+    "gm_stop_confirm": "End the current campaign? Its state will be cleared.",
+    "gm_stopped": "Campaign ended.",
+    "gm_stop_cancelled": "Cancelled — the campaign continues.",
+    "gm_yes": "Yes, end it",
+    "gm_no": "No, keep playing",
+})
+TEXTS["ru"].update({
+    "gm_usage": "Использование: /gm start | scene | npcs | stop",
+    "gm_disabled": "Мастер (GM) выключен.",
+    "gm_pick_header": "🎲 Выбери кампанию:",
+    "gm_pick_failed": "Мастер сейчас молчит — попробуй ещё раз через миг.",
+    "gm_pick_expired": "Эти варианты устарели. Запусти /gm start заново.",
+    "gm_started": "🗺️ Кампания начата: {title}\nПринесён обет: {goal}",
+    "gm_scene_header": "🗺️ Текущая сцена:",
+    "gm_no_campaign": "Активной кампании нет. Начни её командой /gm start.",
+    "gm_npcs_header": "🎭 NPC, которых помнит Мастер:",
+    "gm_npcs_empty": "Мастер пока не называл NPC по имени.",
+    "gm_npc_item": "• {name}: {description}",
+    "gm_stop_confirm": "Завершить текущую кампанию? Её состояние будет очищено.",
+    "gm_stopped": "Кампания завершена.",
+    "gm_stop_cancelled": "Отменено — кампания продолжается.",
+    "gm_yes": "Да, завершить",
+    "gm_no": "Нет, играем дальше",
+})
