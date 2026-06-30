@@ -7,7 +7,7 @@ and that every navigable submenu carries 🔙 Back and 🏠 Home.
 """
 
 from bot import menu
-from engine import MOVES, MoveCategory, Odds, Rank, TrackType
+from engine import ARCHETYPES, MOVES, MoveCategory, Odds, Rank, TrackType
 from engine.character import STAT_NAMES
 
 LANG = "en"
@@ -125,6 +125,43 @@ def test_rank_and_type_keyboards_use_prefix() -> None:
 def test_stat_value_keyboard_is_one_two_three() -> None:
     callbacks = _all_callbacks(menu.stat_value_keyboard("cnew:edge"))
     assert callbacks == ["cnew:edge:1", "cnew:edge:2", "cnew:edge:3"]
+
+
+# --- guided hero creation (archetypes + allocation) --------------------------
+
+
+def test_archetype_keyboard_lists_all_paths_two_per_row() -> None:
+    kb = menu.archetype_keyboard(LANG)
+    callbacks = _all_callbacks(kb)
+    for key in ARCHETYPES:
+        assert f"cnew:arch:{key}" in callbacks
+    assert len(callbacks) == len(ARCHETYPES)
+    # laid out two per row
+    assert all(len(row) <= 2 for row in kb.inline_keyboard)
+
+
+def test_archetype_detail_keyboard_confirm_and_back() -> None:
+    callbacks = _all_callbacks(menu.archetype_detail_keyboard(LANG, "ranger"))
+    assert "cnew:archok:ranger" in callbacks
+    assert "cnew:archback" in callbacks
+
+
+def test_allocation_keyboard_shows_pool_values_then_done() -> None:
+    pool = _all_callbacks(menu.allocation_keyboard(LANG, [1, 1, 2]))
+    assert pool == ["cnew:val:1", "cnew:val:1", "cnew:val:2"]
+    # empty pool → the Done button
+    assert _all_callbacks(menu.allocation_keyboard(LANG, [])) == ["cnew:done"]
+
+
+def test_assign_stat_keyboard_lists_given_stats() -> None:
+    callbacks = _all_callbacks(menu.assign_stat_keyboard(LANG, ["edge", "iron"]))
+    assert callbacks == ["cnew:assign:edge", "cnew:assign:iron"]
+
+
+def test_new_confirm_keyboard_create_and_restart() -> None:
+    callbacks = _all_callbacks(menu.new_confirm_keyboard(LANG))
+    assert "cnew:create" in callbacks
+    assert "cnew:restart" in callbacks
 
 
 def test_lists_render_item_callbacks() -> None:

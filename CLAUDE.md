@@ -19,15 +19,29 @@ The frontend is Telegram, but the game core is frontend-independent.
 - **`engine/`** holds ALL game logic and rules (rolls, oracles, character
   model). It must **never import anything from `telegram`** (or any other
   frontend) **nor from `storage`**. Pure, deterministic, fully unit-testable
-  functions.
+  functions. The `Character` sheet carries the name, five stats, three tracks
+  and momentum, plus an `items: list[str]` inventory and an optional
+  `background: str | None` story; `add_item`/`remove_item`/`set_background`
+  are pure helpers with limits (≤20 items, ≤50 chars each, ≤500-char story).
 - **`storage/`** is the persistence layer (async SQLite via `aiosqlite`). It may
   import `engine` (e.g. the `Character` model); `engine` never imports it.
-  Characters are keyed by `(chat_id, user_id)` for co-op in one chat.
+  Characters are keyed by `(chat_id, user_id)` for co-op in one chat. The
+  `characters` table is migrated additively (e.g. `items` JSON + `background` +
+  `archetype` columns added via `ALTER TABLE`), so older databases keep working
+  with defaulted values.
 - **`engine/moves.py`** holds the named-moves layer: a small v1 set of moves
   (Strike, Face Danger, …) grouped by category (Adventure/Combat/Quest), each
   with per-outcome effects on the character's tracks/momentum. `resolve_move`
   rolls a player-chosen stat and `apply_effects` clamps & applies the delta —
   still pure, deterministic, no telegram/storage.
+- **`engine/classes.py`** holds the character **archetypes** ("paths") — eight
+  light, original adaptations (Warrior, Rogue, Ranger, Sage, Priest, Bard,
+  Savage, Wanderer). Each `CharacterArchetype` is language-agnostic data (a
+  `key`, favoured `primary_stat`, `suggested_items` keys, and an emoji); the
+  localized name/description live in i18n. Creation distributes the fixed spread
+  1,1,2,2,3 across the five stats (`validate_allocation`), then the path adds +1
+  to its primary stat (capped at 4); `create_with_archetype` builds the
+  `Character` with that bonus, the path key, and the starting gear in inventory.
 - **`bot/`** is the thin Telegram layer: parse the command → call `engine` /
   `storage` → format the reply. **No game logic in handlers.** The store is
   built in `bot/main.py` and shared via `application.bot_data["store"]`.
@@ -37,7 +51,12 @@ The frontend is Telegram, but the game core is frontend-independent.
   Slash commands stay as a hidden power-user fallback. Keyboard builders and the
   namespaced `callback_data` scheme (`area:action[:arg…]`) live in `bot/menu.py`;
   a single `menu_callback` routes `menu|move|roll|oracle|char|vow|track|help:`,
-  while the guided creation flows own the `cnew|vnew|tnew:` prefixes.
+  while the guided creation flows own the `cnew|vnew|tnew:` prefixes. `/new` is a
+  guided, teaching flow: name → pick a **path/archetype** (with a blurb and which
+  stat it strengthens) → distribute 1,1,2,2,3 across the stats (each shown with a
+  one-line explanation) → confirm a summary (boosted stat marked, starting gear
+  listed) → create. If the narrator is on, one optional GM-style opening line
+  follows (fail-soft).
 - **`narrator/`** is an OPTIONAL LLM prose layer (local LLM via Ollama, over
   async HTTP with `httpx`). After a mechanical outcome (a roll, a vow
   fulfillment, an encounter) it writes 2-3 sentences of flavor — it
@@ -72,7 +91,7 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 
 ## Layout
 ```
-engine/   # pure game core (rules incl. moves layer), no telegram/storage imports
+engine/   # pure game core (rules incl. moves + archetypes), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
 narrator/ # optional LLM prose layer (Ollama via httpx); describes, never decides

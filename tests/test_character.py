@@ -1,21 +1,98 @@
 """Tests for the pure character model and its rules."""
 
+from dataclasses import replace
+
 import pytest
 
 from engine.character import (
+    MAX_BACKGROUND_LENGTH,
+    MAX_ITEM_LENGTH,
+    MAX_ITEMS,
     MOMENTUM_RESET,
     Character,
+    add_item,
     new_character,
+    remove_item,
     reset_momentum,
+    set_background,
     set_field,
     stat_value,
 )
 
 
 def _char(**overrides) -> Character:
+    # items/background aren't constructor args of new_character; apply after.
+    extras = {k: overrides.pop(k) for k in ("items", "background") if k in overrides}
     base = dict(name="Hero", edge=1, heart=2, iron=3, shadow=1, wits=2)
     base.update(overrides)
-    return new_character(**base)
+    hero = new_character(**base)
+    return replace(hero, **extras) if extras else hero
+
+
+# --- inventory & background --------------------------------------------------
+
+
+def test_new_character_has_empty_inventory_and_no_background() -> None:
+    hero = _char()
+    assert hero.items == []
+    assert hero.background is None
+
+
+def test_add_item_appends_and_is_immutable() -> None:
+    hero = _char()
+    updated = add_item(hero, "  Old dagger  ")  # trimmed
+    assert updated.items == ["Old dagger"]
+    assert hero.items == []  # original unchanged (frozen, new copy)
+
+
+def test_add_item_rejects_empty() -> None:
+    with pytest.raises(ValueError):
+        add_item(_char(), "   ")
+
+
+def test_add_item_rejects_too_long() -> None:
+    with pytest.raises(ValueError):
+        add_item(_char(), "x" * (MAX_ITEM_LENGTH + 1))
+    # exactly at the limit is fine
+    assert add_item(_char(), "x" * MAX_ITEM_LENGTH).items == ["x" * MAX_ITEM_LENGTH]
+
+
+def test_add_item_enforces_inventory_cap() -> None:
+    hero = _char(items=[f"item{i}" for i in range(MAX_ITEMS)])
+    with pytest.raises(ValueError):
+        add_item(hero, "one too many")
+
+
+def test_remove_item_by_index() -> None:
+    hero = _char(items=["a", "b", "c"])
+    assert remove_item(hero, 1).items == ["a", "c"]
+    assert remove_item(hero, 0).items == ["b", "c"]
+    assert remove_item(hero, 2).items == ["a", "b"]
+
+
+def test_remove_item_out_of_range_raises() -> None:
+    with pytest.raises(ValueError):
+        remove_item(_char(items=["a"]), 5)
+    with pytest.raises(ValueError):
+        remove_item(_char(items=[]), 0)
+
+
+def test_set_background_replaces_and_trims() -> None:
+    hero = _char()
+    told = set_background(hero, "  Born in the ashen wastes.  ")
+    assert told.background == "Born in the ashen wastes."
+    # overwrites wholesale, does not append
+    assert set_background(told, "A new tale.").background == "A new tale."
+
+
+def test_set_background_blank_clears_to_none() -> None:
+    hero = _char(background="something")
+    assert set_background(hero, "   ").background is None
+
+
+def test_set_background_rejects_too_long() -> None:
+    with pytest.raises(ValueError):
+        set_background(_char(), "x" * (MAX_BACKGROUND_LENGTH + 1))
 
 
 def test_new_character_defaults_full_tracks_and_start_momentum() -> None:

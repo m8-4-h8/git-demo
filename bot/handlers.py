@@ -10,6 +10,7 @@ language. No game logic lives here.
 from __future__ import annotations
 
 import html
+from collections import Counter
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -38,7 +39,9 @@ from bot.i18n import (
 )
 from bot import menu
 from engine import (
+    ARCHETYPES,
     MOVES,
+    STARTING_ALLOCATION,
     ActionRoll,
     Answer,
     Character,
@@ -48,29 +51,41 @@ from engine import (
     Rank,
     TrackType,
     YesNoResult,
+    add_item,
+    apply_archetype_bonus,
     apply_effects,
     ask_yes_no,
     bounds_for,
     burn_momentum,
     clear_progress,
     complete,
+    create_with_archetype,
     draw_from,
     end_encounter,
     forsake,
     fulfillment_roll,
+    get_archetype,
     list_tables,
     mark_track_progress,
     mark_vow_progress,
-    new_character,
     random_table,
+    remove_item,
     reset_momentum,
     resolve_move,
     roll_action,
+    set_background,
     set_field,
     stat_value,
     table_title,
 )
-from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
+from engine.character import (
+    MAX_BACKGROUND_LENGTH,
+    MAX_ITEM_LENGTH,
+    MAX_ITEMS,
+    MOMENTUM_RESET,
+    STAT_NAMES,
+    TRACK_MIN,
+)
 from gm import (
     GMContext,
     generate_complication,
@@ -79,13 +94,20 @@ from gm import (
     is_enabled as gm_enabled,
     push_scene,
 )
-from narrator import NarratorContext, is_enabled as narrator_enabled, narrate
+from narrator import (
+    NarratorContext,
+    is_enabled as narrator_enabled,
+    narrate,
+    narrate_intro,
+)
 from storage import CharacterExists
 
-# Conversation states for /new (character creation).
-NAME, EDGE, HEART, IRON, SHADOW, WITS = range(6)
+# Conversation states for /new (guided hero creation: name → path → stats).
+NAME, NEW_ARCH, NEW_ALLOC, NEW_ASSIGN, NEW_CONFIRM = range(5)
 # Conversation states for vow / track creation.
-VOW_RANK, VOW_TITLE, TRACK_TYPE, TRACK_RANK, TRACK_TITLE = range(6, 11)
+VOW_RANK, VOW_TITLE, TRACK_TYPE, TRACK_RANK, TRACK_TITLE = range(5, 10)
+# Conversation states for inventory / background editing.
+ITEM_NAME, BG_TEXT = range(10, 12)
 
 _OUTCOME_KEYS = {
     Outcome.STRONG: "outcome_strong",
@@ -336,7 +358,7 @@ def _schedule_gm_scene(
     if not gm_enabled():
         return
     chat = update.effective_chat
-    chat_id, _user_id = _ids(update)
+    chat_id, user_id = _ids(update)
     gm_store = _gm_store(context)
     char_store = _store(context)
     outcome = result.outcome
@@ -346,6 +368,7 @@ def _schedule_gm_scene(
         if state is None:
             return  # no active campaign in this chat
         party = [c.name for c in await char_store.list(chat_id)]
+        actor = await char_store.get(chat_id, user_id)
         gm_context = GMContext(
             scenario_title=state["scenario_title"],
             scenario_goal=state["scenario_goal"],
@@ -355,6 +378,8 @@ def _schedule_gm_scene(
             active_vows=[state["scenario_goal"]],
             npc_memory=state["npc_memory"],
             language=lang,
+            background=actor.background if actor else None,
+            items=list(actor.items) if actor else [],
         )
         if outcome is Outcome.MISS:
             scene = await generate_complication(gm_context)
@@ -1164,6 +1189,34 @@ async def _menu_char(update, context, lang: str, parts: list[str]) -> None:
             character = set_field(character, field, new_value)
             await store.update(chat_id, user_id, character)
         await _render_stepper(query, character, field, lang)
+    elif sub == "delitem":
+        character = await store.get(chat_id, user_id)
+        if character is None:
+            return
+        if len(parts) >= 3:
+            try:
+                index = int(parts[2])
+            except ValueError:
+                return
+            try:
+                character = remove_item(character, index)
+            except ValueError:
+                return
+            await store.update(chat_id, user_id, character)
+        await _render_item_removal(query, character, lang)
+
+
+async def _render_item_removal(query, character, lang: str) -> None:
+    """Show the remove-item picker, or a 'back' note when the inventory is empty."""
+    if not character.items:
+        await query.edit_message_text(
+            t(lang, "inventory_empty"), reply_markup=menu.back_home(lang, "char:menu")
+        )
+        return
+    await query.edit_message_text(
+        t(lang, "item_remove_title"),
+        reply_markup=menu.item_remove_keyboard(lang, character.items),
+    )
 
 
 async def _render_stepper(query, character, field: str, lang: str) -> None:
@@ -1466,6 +1519,74 @@ def _tutorial_keyboard(page: int, lang: str) -> InlineKeyboardMarkup | None:
 # --- /new conversation -------------------------------------------------------
 
 
+_HERO_KEY = "newhero"
+
+
+def _fresh_hero() -> dict:
+    return {"name": None, "archetype": None, "assigned": {}}
+
+
+def _hero(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    return context.user_data.setdefault(_HERO_KEY, _fresh_hero())
+
+
+def _alloc_pool(assigned: dict[str, int]) -> list[int]:
+    """The values from 1,1,2,2,3 not yet placed, ascending."""
+    remaining = Counter(STARTING_ALLOCATION)
+    for value in assigned.values():
+        remaining[value] -= 1
+    pool: list[int] = []
+    for value in sorted(remaining):
+        pool.extend([value] * max(0, remaining[value]))
+    return pool
+
+
+def _unassigned_stats(assigned: dict[str, int]) -> list[str]:
+    return [stat for stat in STAT_NAMES if stat not in assigned]
+
+
+def _archetype_detail_text(lang: str, archetype) -> str:
+    return "\n\n".join([
+        f"{archetype.flavor_icon} {t(lang, f'arch_{archetype.key}_name')}",
+        t(lang, f"arch_{archetype.key}_desc"),
+        t(lang, "new_arch_boost", stat=t(lang, f"stat_{archetype.primary_stat}")),
+    ])
+
+
+def _alloc_text(lang: str, hero: dict) -> str:
+    archetype = get_archetype(hero["archetype"])
+    lines = [t(lang, "new_alloc_intro"), ""]
+    for stat in STAT_NAMES:
+        value = hero["assigned"].get(stat)
+        shown = str(value) if value is not None else t(lang, "new_alloc_unassigned")
+        star = " ⭐" if stat == archetype.primary_stat else ""
+        lines.append(
+            f"{t(lang, f'stat_{stat}')}{star} "
+            f"({t(lang, f'stat_{stat}_desc')}): {shown}"
+        )
+    lines += ["", t(lang, "new_alloc_tap_value")]
+    return "\n".join(lines)
+
+
+def _confirm_text(lang: str, hero: dict) -> str:
+    archetype = get_archetype(hero["archetype"])
+    boosted = apply_archetype_bonus(hero["assigned"], archetype)
+    stat_bits = []
+    for stat in STAT_NAMES:
+        mark = t(lang, "new_boost_mark") if stat == archetype.primary_stat else ""
+        stat_bits.append(f"{t(lang, f'stat_{stat}')} {boosted[stat]}{mark}")
+    items = ", ".join(t(lang, f"item_{key}") for key in archetype.suggested_items)
+    return "\n".join([
+        t(lang, "new_confirm_title"),
+        "",
+        f"📜 {hero['name']}",
+        t(lang, "new_confirm_archetype_line",
+          icon=archetype.flavor_icon, name=t(lang, f"arch_{archetype.key}_name")),
+        " · ".join(stat_bits),
+        t(lang, "new_confirm_items_line", items=items),
+    ])
+
+
 async def new_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message is None:
         return ConversationHandler.END
@@ -1474,7 +1595,7 @@ async def new_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await _store(context).get(chat_id, user_id) is not None:
         await update.message.reply_text(t(lang, "new_already_exists"))
         return ConversationHandler.END
-    context.user_data["new_char"] = {}
+    context.user_data[_HERO_KEY] = _fresh_hero()
     await update.message.reply_text(t(lang, "new_intro"))
     return NAME
 
@@ -1493,7 +1614,7 @@ async def new_start_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             reply_markup=menu.back_home(lang, "char:menu"),
         )
         return ConversationHandler.END
-    context.user_data["new_char"] = {}
+    context.user_data[_HERO_KEY] = _fresh_hero()
     await query.edit_message_text(t(lang, "new_intro"))
     return NAME
 
@@ -1506,115 +1627,199 @@ async def new_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not name:
         await update.message.reply_text(t(lang, "new_empty_name"))
         return NAME
-    context.user_data.setdefault("new_char", {})["name"] = name
+    _hero(context)["name"] = name
     await update.message.reply_text(
-        _stat_prompt("edge", lang), reply_markup=menu.stat_value_keyboard("cnew:edge")
+        t(lang, "new_pick_archetype"), reply_markup=menu.archetype_keyboard(lang)
     )
-    return EDGE
+    return NEW_ARCH
 
 
-def _stat_step(stat_name: str, this_state: int, next_prompt: str, next_state):
-    """Build a typed conversation step that collects one stat in range 1-3."""
-
-    async def step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        if update.message is None:
-            return this_state
-        lang = await _lang(update, context)
-        try:
-            value = int((update.message.text or "").strip())
-        except ValueError:
-            await update.message.reply_text(_bad_stat(stat_name, lang))
-            return this_state
-        if not STAT_MIN <= value <= STAT_MAX:
-            await update.message.reply_text(_bad_stat(stat_name, lang))
-            return this_state
-
-        context.user_data.setdefault("new_char", {})[stat_name] = value
-        if next_state is None:
-            return await _finish_new(update, context)
-        await update.message.reply_text(
-            _stat_prompt(next_prompt, lang),
-            reply_markup=menu.stat_value_keyboard(f"cnew:{next_prompt}"),
-        )
-        return next_state
-
-    return step
-
-
-def _stat_button_step(stat_name: str, this_state: int, next_prompt: str, next_state):
-    """Build a button conversation step (1/2/3 taps) that collects one stat."""
-
-    async def step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        query = update.callback_query
-        if query is None or query.data is None:
-            return this_state
-        await query.answer()
-        lang = await _lang(update, context)
-        try:
-            value = int(query.data.split(":")[2])
-        except (ValueError, IndexError):
-            return this_state
-        if not STAT_MIN <= value <= STAT_MAX:
-            return this_state
-
-        context.user_data.setdefault("new_char", {})[stat_name] = value
-        if next_state is None:
-            await query.edit_message_reply_markup(reply_markup=None)
-            return await _finish_new(update, context)
-        await query.edit_message_text(
-            _stat_prompt(next_prompt, lang),
-            reply_markup=menu.stat_value_keyboard(f"cnew:{next_prompt}"),
-        )
-        return next_state
-
-    return step
-
-
-new_edge = _stat_step("edge", EDGE, "heart", HEART)
-new_heart = _stat_step("heart", HEART, "iron", IRON)
-new_iron = _stat_step("iron", IRON, "shadow", SHADOW)
-new_shadow = _stat_step("shadow", SHADOW, "wits", WITS)
-new_wits = _stat_step("wits", WITS, "", None)
-
-new_edge_btn = _stat_button_step("edge", EDGE, "heart", HEART)
-new_heart_btn = _stat_button_step("heart", HEART, "iron", IRON)
-new_iron_btn = _stat_button_step("iron", IRON, "shadow", SHADOW)
-new_shadow_btn = _stat_button_step("shadow", SHADOW, "wits", WITS)
-new_wits_btn = _stat_button_step("wits", WITS, "", None)
-
-
-async def _finish_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Create and persist the hero, then send the sheet (works from text or button)."""
+async def new_arch_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show a chosen path's blurb plus Confirm / Another-path."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return NEW_ARCH
+    await query.answer()
     lang = await _lang(update, context)
-    data = context.user_data.pop("new_char", {})
-    chat = update.effective_chat
+    key = query.data.split(":")[2]
     try:
-        character = new_character(
-            data["name"], data["edge"], data["heart"],
-            data["iron"], data["shadow"], data["wits"],
+        archetype = get_archetype(key)
+    except ValueError:
+        return NEW_ARCH
+    await query.edit_message_text(
+        _archetype_detail_text(lang, archetype),
+        reply_markup=menu.archetype_detail_keyboard(lang, key),
+    )
+    return NEW_ARCH
+
+
+async def new_arch_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    lang = await _lang(update, context)
+    await query.edit_message_text(
+        t(lang, "new_pick_archetype"), reply_markup=menu.archetype_keyboard(lang)
+    )
+    return NEW_ARCH
+
+
+async def new_arch_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Lock in the path and move to stat allocation."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return NEW_ARCH
+    await query.answer()
+    lang = await _lang(update, context)
+    key = query.data.split(":")[2]
+    try:
+        get_archetype(key)
+    except ValueError:
+        return NEW_ARCH
+    hero = _hero(context)
+    hero["archetype"] = key
+    hero["assigned"] = {}
+    await query.edit_message_text(
+        _alloc_text(lang, hero),
+        reply_markup=menu.allocation_keyboard(lang, _alloc_pool(hero["assigned"])),
+    )
+    return NEW_ALLOC
+
+
+async def new_alloc_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """A pool value was tapped — ask which stat receives it."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return NEW_ALLOC
+    await query.answer()
+    lang = await _lang(update, context)
+    try:
+        value = int(query.data.split(":")[2])
+    except (ValueError, IndexError):
+        return NEW_ALLOC
+    hero = _hero(context)
+    if value not in _alloc_pool(hero["assigned"]):
+        return NEW_ALLOC  # stale tap; that value is already spent
+    hero["pending_value"] = value
+    await query.edit_message_text(
+        t(lang, "new_assign_prompt", value=value),
+        reply_markup=menu.assign_stat_keyboard(lang, _unassigned_stats(hero["assigned"])),
+    )
+    return NEW_ASSIGN
+
+
+async def new_alloc_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Place the pending value onto the chosen stat, back to allocation."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return NEW_ASSIGN
+    await query.answer()
+    lang = await _lang(update, context)
+    stat = query.data.split(":")[2]
+    hero = _hero(context)
+    value = hero.pop("pending_value", None)
+    if value is not None and stat in STAT_NAMES and stat not in hero["assigned"]:
+        hero["assigned"][stat] = value
+    await query.edit_message_text(
+        _alloc_text(lang, hero),
+        reply_markup=menu.allocation_keyboard(lang, _alloc_pool(hero["assigned"])),
+    )
+    return NEW_ALLOC
+
+
+async def new_alloc_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    lang = await _lang(update, context)
+    hero = _hero(context)
+    if _alloc_pool(hero["assigned"]):
+        return NEW_ALLOC  # not everything placed yet
+    await query.edit_message_text(
+        _confirm_text(lang, hero), reply_markup=menu.new_confirm_keyboard(lang)
+    )
+    return NEW_CONFIRM
+
+
+async def new_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Clear the allocation and start placing values again (keeps name & path)."""
+    query = update.callback_query
+    await query.answer()
+    lang = await _lang(update, context)
+    hero = _hero(context)
+    hero["assigned"] = {}
+    hero.pop("pending_value", None)
+    await query.edit_message_text(
+        _alloc_text(lang, hero),
+        reply_markup=menu.allocation_keyboard(lang, _alloc_pool(hero["assigned"])),
+    )
+    return NEW_ALLOC
+
+
+async def new_create(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Build, persist, and present the finished hero (plus an optional intro line)."""
+    query = update.callback_query
+    await query.answer()
+    lang = await _lang(update, context)
+    hero = context.user_data.get(_HERO_KEY, {})
+    try:
+        archetype = get_archetype(hero.get("archetype"))
+        items = [t(lang, f"item_{key}") for key in archetype.suggested_items]
+        character = create_with_archetype(
+            hero.get("name") or "", hero.get("assigned", {}), archetype, items=items
         )
-    except (KeyError, ValueError) as error:
-        await chat.send_message(t(lang, "new_failed", error=error))
+    except (ValueError, TypeError) as error:
+        context.user_data.pop(_HERO_KEY, None)
+        await query.edit_message_text(
+            t(lang, "new_failed", error=error), reply_markup=menu.home_only(lang)
+        )
         return ConversationHandler.END
 
     chat_id, user_id = _ids(update)
     try:
         await _store(context).create(chat_id, user_id, character)
     except CharacterExists:
-        await chat.send_message(t(lang, "new_already_exists"))
+        context.user_data.pop(_HERO_KEY, None)
+        await query.edit_message_text(
+            t(lang, "new_already_exists"), reply_markup=menu.home_only(lang)
+        )
         return ConversationHandler.END
 
-    await chat.send_message(
+    context.user_data.pop(_HERO_KEY, None)
+    await query.edit_message_reply_markup(reply_markup=None)
+    await update.effective_chat.send_message(
         t(lang, "new_created") + "\n\n" + _format_sheet(character, lang),
         reply_markup=menu.home_only(lang),
     )
+    _schedule_intro(update, context, character.name,
+                    t(lang, f"arch_{archetype.key}_name"), lang)
     return ConversationHandler.END
+
+
+def _schedule_intro(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    name: str,
+    archetype_label: str,
+    lang: str,
+) -> None:
+    """Optionally send one GM-style opening line after creation (fails soft)."""
+    if not narrator_enabled():
+        return
+    chat = update.effective_chat
+
+    async def _run() -> None:
+        prose = await narrate_intro(name, archetype_label, lang)
+        if prose:
+            await chat.send_message(
+                f"<i>{html.escape(prose)}</i>", parse_mode=ParseMode.HTML
+            )
+
+    context.application.create_task(_run())
 
 
 async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Shared /cancel for every guided creation flow."""
     lang = await _lang(update, context)
-    for key in ("new_char", "new_vow", "new_track"):
+    for key in (_HERO_KEY, "new_vow", "new_track"):
         context.user_data.pop(key, None)
     if update.message is not None:
         await update.message.reply_text(t(lang, "new_cancelled"))
@@ -1622,7 +1827,7 @@ async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 def build_new_handler() -> ConversationHandler:
-    """Build the /new conversation handler (command and button entry points)."""
+    """The guided /new flow: name → path → stat allocation → confirm."""
     text = filters.TEXT & ~filters.COMMAND
     return ConversationHandler(
         entry_points=[
@@ -1631,16 +1836,22 @@ def build_new_handler() -> ConversationHandler:
         ],
         states={
             NAME: [MessageHandler(text, new_name)],
-            EDGE: [CallbackQueryHandler(new_edge_btn, pattern=r"^cnew:edge:"),
-                   MessageHandler(text, new_edge)],
-            HEART: [CallbackQueryHandler(new_heart_btn, pattern=r"^cnew:heart:"),
-                    MessageHandler(text, new_heart)],
-            IRON: [CallbackQueryHandler(new_iron_btn, pattern=r"^cnew:iron:"),
-                   MessageHandler(text, new_iron)],
-            SHADOW: [CallbackQueryHandler(new_shadow_btn, pattern=r"^cnew:shadow:"),
-                     MessageHandler(text, new_shadow)],
-            WITS: [CallbackQueryHandler(new_wits_btn, pattern=r"^cnew:wits:"),
-                   MessageHandler(text, new_wits)],
+            NEW_ARCH: [
+                CallbackQueryHandler(new_arch_confirm, pattern=r"^cnew:archok:"),
+                CallbackQueryHandler(new_arch_back, pattern=r"^cnew:archback$"),
+                CallbackQueryHandler(new_arch_detail, pattern=r"^cnew:arch:"),
+            ],
+            NEW_ALLOC: [
+                CallbackQueryHandler(new_alloc_value, pattern=r"^cnew:val:"),
+                CallbackQueryHandler(new_alloc_done, pattern=r"^cnew:done$"),
+            ],
+            NEW_ASSIGN: [
+                CallbackQueryHandler(new_alloc_assign, pattern=r"^cnew:assign:"),
+            ],
+            NEW_CONFIRM: [
+                CallbackQueryHandler(new_create, pattern=r"^cnew:create$"),
+                CallbackQueryHandler(new_restart, pattern=r"^cnew:restart$"),
+            ],
         },
         fallbacks=[CommandHandler("cancel", conv_cancel)],
     )
@@ -1780,17 +1991,118 @@ def build_track_handler() -> ConversationHandler:
     )
 
 
+# --- inventory / background editing (button entry → typed input) -------------
+
+
+async def item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    chat_id, user_id = _ids(update)
+    if await _store(context).get(chat_id, user_id) is None:
+        await query.edit_message_text(
+            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+        )
+        return ConversationHandler.END
+    await query.edit_message_text(t(lang, "item_add_prompt"))
+    return ITEM_NAME
+
+
+async def item_add_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return ITEM_NAME
+    lang = await _lang(update, context)
+    name = (update.message.text or "").strip()
+    if not name:
+        await update.message.reply_text(t(lang, "item_empty_name"))
+        return ITEM_NAME
+    if len(name) > MAX_ITEM_LENGTH:
+        await update.message.reply_text(t(lang, "item_too_long", max=MAX_ITEM_LENGTH))
+        return ITEM_NAME
+
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    character = await store.get(chat_id, user_id)
+    if character is None:
+        await update.message.reply_text(t(lang, "no_character"))
+        return ConversationHandler.END
+    if len(character.items) >= MAX_ITEMS:
+        await update.message.reply_text(t(lang, "inventory_full", max=MAX_ITEMS))
+        return ConversationHandler.END
+
+    updated = add_item(character, name)
+    await store.update(chat_id, user_id, updated)
+    await update.message.reply_text(
+        t(lang, "item_added", item=name) + "\n\n" + _format_sheet(updated, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_item_handler() -> ConversationHandler:
+    """Add an inventory item: button entry → typed item name."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(item_add_start, pattern=r"^iadd:start$")],
+        states={ITEM_NAME: [MessageHandler(text, item_add_save)]},
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
+async def bg_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    chat_id, user_id = _ids(update)
+    if await _store(context).get(chat_id, user_id) is None:
+        await query.edit_message_text(
+            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+        )
+        return ConversationHandler.END
+    await query.edit_message_text(t(lang, "bg_prompt", max=MAX_BACKGROUND_LENGTH))
+    return BG_TEXT
+
+
+async def bg_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return BG_TEXT
+    lang = await _lang(update, context)
+    text_in = (update.message.text or "").strip()
+    if len(text_in) > MAX_BACKGROUND_LENGTH:
+        await update.message.reply_text(t(lang, "bg_too_long", max=MAX_BACKGROUND_LENGTH))
+        return BG_TEXT
+
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    character = await store.get(chat_id, user_id)
+    if character is None:
+        await update.message.reply_text(t(lang, "no_character"))
+        return ConversationHandler.END
+
+    updated = set_background(character, text_in)
+    await store.update(chat_id, user_id, updated)
+    await update.message.reply_text(
+        t(lang, "bg_set") + "\n\n" + _format_sheet(updated, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_background_handler() -> ConversationHandler:
+    """Set the hero's background story: button entry → typed prose."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(bg_start, pattern=r"^bgset:start$")],
+        states={BG_TEXT: [MessageHandler(text, bg_save)]},
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
 # --- formatting helpers ------------------------------------------------------
-
-
-def _stat_prompt(stat_name: str, lang: str) -> str:
-    return t(lang, "new_ask_stat", stat=t(lang, f"stat_{stat_name}"),
-             lo=STAT_MIN, hi=STAT_MAX)
-
-
-def _bad_stat(stat_name: str, lang: str) -> str:
-    return t(lang, "new_bad_stat", stat=t(lang, f"stat_{stat_name}"),
-             lo=STAT_MIN, hi=STAT_MAX)
 
 
 def _field_label(field: str, lang: str) -> str:
@@ -1909,7 +2221,7 @@ def _format_roll(result: ActionRoll, stat_name: str, lang: str) -> str:
 
 
 def _format_sheet(character: Character, lang: str) -> str:
-    return t(
+    base = t(
         lang, "sheet",
         name=character.name,
         edge_l=t(lang, "stat_edge"), edge=character.edge,
@@ -1923,6 +2235,16 @@ def _format_sheet(character: Character, lang: str) -> str:
         momentum_l=t(lang, "momentum"), momentum=character.momentum,
         reset_l=t(lang, "reset"), reset=MOMENTUM_RESET,
     )
+    items = ", ".join(character.items) if character.items else t(lang, "sheet_items_empty")
+    story = character.background or t(lang, "sheet_background_empty")
+    lines = [base]
+    archetype = ARCHETYPES.get(character.archetype) if character.archetype else None
+    if archetype is not None:
+        lines.append(t(lang, "sheet_archetype", icon=archetype.flavor_icon,
+                       name=t(lang, f"arch_{archetype.key}_name")))
+    lines.append(t(lang, "sheet_items", items=items))
+    lines.append(t(lang, "sheet_background", text=story))
+    return "\n".join(lines)
 
 
 def _format_ask(result: YesNoResult, question: str, lang: str) -> str:

@@ -6,10 +6,11 @@ no extra pytest plugin is required. Each test uses an isolated db file under
 """
 
 import asyncio
+import sqlite3
 
 import pytest
 
-from engine.character import new_character, set_field
+from engine.character import add_item, new_character, set_background, set_field
 from storage import CharacterExists, CharacterStore
 
 
@@ -96,3 +97,64 @@ def test_coop_two_users_same_chat_are_independent(tmp_path) -> None:
     assert alice.health == 5
     assert bob.name == "Bob"
     assert bob.health == 1
+
+
+# --- inventory & background persistence --------------------------------------
+
+
+def test_items_and_background_round_trip(tmp_path) -> None:
+    store = _store(tmp_path)
+
+    async def scenario():
+        await store.init()
+        hero = add_item(_hero("Aila"), "Old dagger")
+        hero = add_item(hero, "Lockpicks")
+        hero = set_background(hero, "Born in the ashen wastes.")
+        await store.create(10, 20, hero)
+        return await store.get(10, 20)
+
+    fetched = _run(scenario())
+    assert fetched.items == ["Old dagger", "Lockpicks"]
+    assert fetched.background == "Born in the ashen wastes."
+
+
+def test_update_persists_inventory(tmp_path) -> None:
+    store = _store(tmp_path)
+
+    async def scenario():
+        await store.init()
+        await store.create(10, 20, _hero())
+        hero = await store.get(10, 20)
+        await store.update(10, 20, add_item(hero, "Torch"))
+        return await store.get(10, 20)
+
+    assert _run(scenario()).items == ["Torch"]
+
+
+def test_old_schema_migrates_with_defaults(tmp_path) -> None:
+    """A pre-existing DB without items/background must load with safe defaults."""
+    db_path = str(tmp_path / "legacy.db")
+    legacy = sqlite3.connect(db_path)
+    legacy.execute(
+        """CREATE TABLE characters (
+            chat_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT NOT NULL,
+            edge INTEGER, heart INTEGER, iron INTEGER, shadow INTEGER, wits INTEGER,
+            health INTEGER, spirit INTEGER, supply INTEGER, momentum INTEGER,
+            PRIMARY KEY (chat_id, user_id))"""
+    )
+    legacy.execute(
+        "INSERT INTO characters VALUES (1, 1, 'Veteran', 1, 2, 3, 1, 2, 5, 5, 5, 2)"
+    )
+    legacy.commit()
+    legacy.close()
+
+    store = CharacterStore(db_path)
+
+    async def scenario():
+        await store.init()  # migrates additively, must not break the old row
+        return await store.get(1, 1)
+
+    fetched = _run(scenario())
+    assert fetched.name == "Veteran"
+    assert fetched.items == []
+    assert fetched.background is None

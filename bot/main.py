@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 from bot.handlers import (
     ask,
+    build_background_handler,
+    build_item_handler,
     build_new_handler,
     build_track_handler,
     build_vow_handler,
@@ -119,6 +121,8 @@ def build_application(
     application.add_handler(build_new_handler())
     application.add_handler(build_vow_handler())
     application.add_handler(build_track_handler())
+    application.add_handler(build_item_handler())
+    application.add_handler(build_background_handler())
     application.add_handler(CommandHandler("me", me))
     application.add_handler(CommandHandler("set", set_value))
     application.add_handler(CommandHandler("roll", roll))

@@ -34,6 +34,10 @@ class GMContext:
     active_vows: list[str] = field(default_factory=list)
     npc_memory: dict[str, str] = field(default_factory=dict)
     language: str = "en"
+    # Optional colour for richer narrative — the acting hero's story & gear.
+    # Both default to empty, so the GM works exactly as before without them.
+    background: str | None = None
+    items: list[str] = field(default_factory=list)
 
 
 def push_scene(

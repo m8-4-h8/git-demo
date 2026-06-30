@@ -14,6 +14,7 @@ from telegram import InlineKeyboardMarkup as _Kb
 
 from bot.i18n import t
 from engine.character import STAT_NAMES
+from engine.classes import ARCHETYPES
 from engine.moves import MOVES, MoveCategory, moves_in
 from engine.oracles import Odds
 from engine.progress import Rank
@@ -95,10 +96,23 @@ def character_menu(lang: str, has_character: bool) -> _Kb:
         rows = [
             [_Btn(t(lang, "char_show_btn"), callback_data="char:show")],
             [_Btn(t(lang, "char_set_btn"), callback_data="char:set")],
+            [_Btn(t(lang, "item_add_btn"), callback_data="iadd:start"),
+             _Btn(t(lang, "item_del_btn"), callback_data="char:delitem")],
+            [_Btn(t(lang, "bg_set_btn"), callback_data="bgset:start")],
         ]
     else:
         rows = [[_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")]]
     rows.append(_nav(lang, HOME))
+    return _Kb(rows)
+
+
+def item_remove_keyboard(lang: str, items: list[str]) -> _Kb:
+    """One button per inventory item; tapping removes it (``char:delitem:<idx>``)."""
+    rows = [
+        [_Btn(f"➖ {item}", callback_data=f"char:delitem:{index}")]
+        for index, item in enumerate(items)
+    ]
+    rows.append(_nav(lang, "char:menu"))
     return _Kb(rows)
 
 
@@ -232,4 +246,51 @@ def stat_value_keyboard(prefix: str) -> _Kb:
         _Btn("1", callback_data=f"{prefix}:1"),
         _Btn("2", callback_data=f"{prefix}:2"),
         _Btn("3", callback_data=f"{prefix}:3"),
+    ]])
+
+
+# --- guided hero creation (archetype path + stat allocation) -----------------
+
+
+def archetype_keyboard(lang: str) -> _Kb:
+    """The 8 archetype paths, two per row (``cnew:arch:<key>``)."""
+    buttons = [
+        _Btn(f"{arch.flavor_icon} {t(lang, f'arch_{key}_name')}",
+             callback_data=f"cnew:arch:{key}")
+        for key, arch in ARCHETYPES.items()
+    ]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    return _Kb(rows)
+
+
+def archetype_detail_keyboard(lang: str, key: str) -> _Kb:
+    """Confirm the chosen path or go back to the list."""
+    return _Kb([[
+        _Btn(t(lang, "btn_confirm"), callback_data=f"cnew:archok:{key}"),
+        _Btn(t(lang, "btn_other_path"), callback_data="cnew:archback"),
+    ]])
+
+
+def allocation_keyboard(lang: str, pool: list[int]) -> _Kb:
+    """Remaining values to place (``cnew:val:<value>``), or ✅ Done when empty."""
+    if pool:
+        return _Kb([[_Btn(str(value), callback_data=f"cnew:val:{value}")
+                     for value in pool]])
+    return _Kb([[_Btn(t(lang, "btn_done"), callback_data="cnew:done")]])
+
+
+def assign_stat_keyboard(lang: str, stats: list[str]) -> _Kb:
+    """Pick which unassigned stat receives the tapped value (``cnew:assign:<stat>``)."""
+    rows = [
+        [_Btn(t(lang, f"stat_{stat}"), callback_data=f"cnew:assign:{stat}")]
+        for stat in stats
+    ]
+    return _Kb(rows)
+
+
+def new_confirm_keyboard(lang: str) -> _Kb:
+    """Final create / start-over choice."""
+    return _Kb([[
+        _Btn(t(lang, "btn_create_hero"), callback_data="cnew:create"),
+        _Btn(t(lang, "btn_restart"), callback_data="cnew:restart"),
     ]])

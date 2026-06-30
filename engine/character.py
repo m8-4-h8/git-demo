@@ -8,7 +8,7 @@ in the separate ``storage`` package.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 STAT_NAMES = ("edge", "heart", "iron", "shadow", "wits")
 TRACK_NAMES = ("health", "spirit", "supply")
@@ -24,13 +24,20 @@ MOMENTUM_MAX = 10
 MOMENTUM_START = 2
 MOMENTUM_RESET = 2
 
+# Inventory / background limits (validated by the helpers below).
+MAX_ITEMS = 20
+MAX_ITEM_LENGTH = 50
+MAX_BACKGROUND_LENGTH = 500
+
 
 @dataclass(frozen=True)
 class Character:
     """An Ironsworn character sheet.
 
-    Stats are 1-3, tracks 0-5, momentum -6..+10. Instances are immutable;
-    rule helpers return new copies via :func:`dataclasses.replace`.
+    Stats are 1-3, tracks 0-5, momentum -6..+10. ``items`` is a simple
+    inventory of short strings and ``background`` is optional free prose.
+    Instances are immutable; rule helpers return new copies via
+    :func:`dataclasses.replace`.
     """
 
     name: str
@@ -43,6 +50,9 @@ class Character:
     spirit: int = TRACK_MAX
     supply: int = TRACK_MAX
     momentum: int = MOMENTUM_START
+    items: list[str] = field(default_factory=list)
+    background: str | None = None
+    archetype: str | None = None
 
 
 def bounds_for(field: str) -> tuple[int, int]:
@@ -113,3 +123,50 @@ def set_field(character: Character, field: str, value: int) -> Character:
 def reset_momentum(character: Character) -> Character:
     """Return a copy of ``character`` with momentum reset to its starting value."""
     return replace(character, momentum=MOMENTUM_RESET)
+
+
+def add_item(character: Character, item: str) -> Character:
+    """Return a copy of ``character`` with ``item`` appended to the inventory.
+
+    Raises:
+        ValueError: If the item is empty, too long, or the inventory is full.
+    """
+    text = item.strip()
+    if not text:
+        raise ValueError("item must not be empty")
+    if len(text) > MAX_ITEM_LENGTH:
+        raise ValueError(
+            f"item must be at most {MAX_ITEM_LENGTH} characters, got {len(text)}"
+        )
+    if len(character.items) >= MAX_ITEMS:
+        raise ValueError(f"inventory is full (max {MAX_ITEMS} items)")
+    return replace(character, items=[*character.items, text])
+
+
+def remove_item(character: Character, index: int) -> Character:
+    """Return a copy of ``character`` with the item at ``index`` removed.
+
+    Raises:
+        ValueError: If ``index`` is out of range.
+    """
+    if not 0 <= index < len(character.items):
+        raise ValueError(f"no item at index {index}")
+    remaining = [it for i, it in enumerate(character.items) if i != index]
+    return replace(character, items=remaining)
+
+
+def set_background(character: Character, text: str) -> Character:
+    """Return a copy of ``character`` with ``background`` replaced wholesale.
+
+    A blank string clears the background (stored as ``None``).
+
+    Raises:
+        ValueError: If the text exceeds the length limit.
+    """
+    cleaned = text.strip()
+    if len(cleaned) > MAX_BACKGROUND_LENGTH:
+        raise ValueError(
+            f"background must be at most {MAX_BACKGROUND_LENGTH} characters, "
+            f"got {len(cleaned)}"
+        )
+    return replace(character, background=cleaned or None)
