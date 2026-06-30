@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS characters (
     momentum INTEGER NOT NULL,
     items TEXT NOT NULL DEFAULT '[]',
     background TEXT,
+    archetype TEXT,
     PRIMARY KEY ({", ".join(_KEY_COLUMNS)})
 )
 """
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS characters (
 _MIGRATIONS = (
     ("items", "TEXT NOT NULL DEFAULT '[]'"),
     ("background", "TEXT"),
+    ("archetype", "TEXT"),
 )
 
 

@@ -7,8 +7,8 @@ contents, never the quality of the generated prose.
 import asyncio
 
 from engine import Outcome
-from narrator import NarratorContext, narrate
-from narrator.prompts import build_user_prompt
+from narrator import NarratorContext, narrate, narrate_intro
+from narrator.prompts import build_intro_prompt, build_user_prompt
 
 
 class _Response:
@@ -101,6 +101,26 @@ def test_user_prompt_handles_missing_character_and_optionals() -> None:
     assert "the hero" in prompt          # character fallback
     assert "Active vow: none" in prompt
     assert "Combat with the bandits" in prompt
+
+
+def test_intro_disabled_returns_none(monkeypatch) -> None:
+    monkeypatch.setenv("NARRATOR_ENABLED", "false")
+    assert _run(narrate_intro("Grim", "Warrior", "en",
+                              client=FakeClient(text="x"))) is None
+
+
+def test_intro_returns_line_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("NARRATOR_ENABLED", "true")
+    result = _run(narrate_intro("Grim", "Warrior", "en",
+                                client=FakeClient(text="So begins the saga.")))
+    assert result == "So begins the saga."
+
+
+def test_intro_prompt_names_hero_and_path() -> None:
+    prompt = build_intro_prompt("Grim", "Warrior", "ru")
+    assert "Grim" in prompt
+    assert "Warrior" in prompt
+    assert "Russian" in prompt
 
 
 def test_user_prompt_contains_all_context_fields() -> None:

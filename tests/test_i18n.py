@@ -14,6 +14,7 @@ from bot.i18n import (
     t,
 )
 from engine.character import STAT_NAMES, TRACK_NAMES
+from engine.classes import ARCHETYPES, SUGGESTED_ITEM_KEYS
 from engine.oracles import Odds
 
 
@@ -30,6 +31,16 @@ def test_every_language_has_required_label_keys() -> None:
         + [f"odds_{o.name.lower()}" for o in Odds]
         + ["momentum", "reset"]
     )
+    for lang in LANGS:
+        for key in required:
+            assert key in TEXTS[lang], f"{lang} missing {key}"
+
+
+def test_every_language_localizes_archetypes_and_gear() -> None:
+    required = [f"stat_{s}_desc" for s in STAT_NAMES]
+    for key in ARCHETYPES:
+        required += [f"arch_{key}_name", f"arch_{key}_desc"]
+    required += [f"item_{key}" for key in SUGGESTED_ITEM_KEYS]
     for lang in LANGS:
         for key in required:
             assert key in TEXTS[lang], f"{lang} missing {key}"

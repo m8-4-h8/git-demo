@@ -803,3 +803,164 @@ TEXTS["ru"].update({
     "bg_too_long": "Слишком длинно — максимум {max} символов.",
     "bg_set": "📖 История обновлена.",
 })
+
+
+# --- Archetypes & the guided /new flow ---------------------------------------
+TEXTS["en"].update({
+    # one-line stat explanations (shown during allocation)
+    "stat_edge_desc": "speed, reflexes, precision in swift action",
+    "stat_heart_desc": "will, charisma, bonds with others and yourself",
+    "stat_iron_desc": "strength, endurance, direct confrontation",
+    "stat_shadow_desc": "stealth, cunning, acting unseen",
+    "stat_wits_desc": "observation, improvisation, knowledge",
+    # archetype names
+    "arch_warrior_name": "Warrior",
+    "arch_rogue_name": "Rogue",
+    "arch_ranger_name": "Ranger",
+    "arch_sage_name": "Sage",
+    "arch_priest_name": "Priest",
+    "arch_bard_name": "Bard",
+    "arch_savage_name": "Savage",
+    "arch_wanderer_name": "Wanderer",
+    # archetype descriptions (2-3 sentences, original flavour)
+    "arch_warrior_desc": (
+        "You hold the line where others break. Strength and steel are your "
+        "answer to almost any threat."
+    ),
+    "arch_rogue_desc": (
+        "Shadow and a sharp plan beat brute force. You slip in unseen and are "
+        "gone before the alarm is raised."
+    ),
+    "arch_ranger_desc": (
+        "The wild trails are your home and no quarry escapes the horizon. A keen "
+        "eye and quick feet carry you where others get lost."
+    ),
+    "arch_sage_desc": (
+        "You seek the knowledge that sleeps in old stones and forgotten words. "
+        "Where force fails, understanding decides."
+    ),
+    "arch_priest_desc": (
+        "Your faith is a shield for your companions and a light in the deepest "
+        "night. You mend bodies and keep the party's spirit whole."
+    ),
+    "arch_bard_desc": (
+        "A word and a song open doors closed to any blade. You inspire your "
+        "friends and unsettle your foes."
+    ),
+    "arch_savage_desc": (
+        "You grew where only the strongest survive, and you carry that fury with "
+        "you. In battle you are an unstoppable storm."
+    ),
+    "arch_wanderer_desc": (
+        "No road is strange to you, no land holds you long. You read the omens "
+        "of the trail and find a path where there is none."
+    ),
+    # starting-item labels (archetype gear)
+    "item_sword": "Sword", "item_shield": "Shield",
+    "item_daggers": "Daggers", "item_lockpicks": "Lockpicks",
+    "item_bow": "Bow", "item_arrows": "Arrows",
+    "item_spellbook": "Spellbook", "item_staff": "Staff",
+    "item_holy_symbol": "Holy symbol", "item_healing_herbs": "Healing herbs",
+    "item_lute": "Lute", "item_wine_flask": "Wine flask",
+    "item_axe": "Axe", "item_beast_pelt": "Beast pelt",
+    "item_herbs": "Herbs", "item_wanderers_staff": "Wanderer's staff",
+    # flow
+    "new_pick_archetype": "Choose your hero's path:",
+    "new_arch_boost": "This path strengthens: {stat}",
+    "new_alloc_intro": (
+        "You have 5 stats. Spread the values 1, 1, 2, 2, 3 across them — each "
+        "value used once."
+    ),
+    "new_alloc_unassigned": "—",
+    "new_alloc_tap_value": "Tap a value, then choose which stat receives it.",
+    "new_assign_prompt": "Assign {value} to which stat?",
+    "new_confirm_title": "Review your hero:",
+    "new_confirm_archetype_line": "Path: {icon} {name}",
+    "new_confirm_items_line": "📦 Starting gear: {items}",
+    "new_boost_mark": " (+1 path)",
+    "sheet_archetype": "🎲 Path: {icon} {name}",
+    "btn_confirm": "✅ Confirm",
+    "btn_other_path": "⬅️ Another path",
+    "btn_done": "✅ Done",
+    "btn_create_hero": "✅ Create hero",
+    "btn_restart": "🔄 Start over",
+})
+TEXTS["ru"].update({
+    # one-line stat explanations (shown during allocation)
+    "stat_edge_desc": "скорость, рефлексы, точность в стремительных действиях",
+    "stat_heart_desc": "воля, харизма, связь с другими и собой",
+    "stat_iron_desc": "сила, выносливость, прямая конфронтация",
+    "stat_shadow_desc": "скрытность, хитрость, действия в обход",
+    "stat_wits_desc": "наблюдательность, импровизация, знания",
+    # archetype names
+    "arch_warrior_name": "Воин",
+    "arch_rogue_name": "Разбойник",
+    "arch_ranger_name": "Следопыт",
+    "arch_sage_name": "Мудрец",
+    "arch_priest_name": "Жрец",
+    "arch_bard_name": "Бард",
+    "arch_savage_name": "Дикарь",
+    "arch_wanderer_name": "Странник",
+    # archetype descriptions (2-3 sentences, original flavour)
+    "arch_warrior_desc": (
+        "Ты держишь строй там, где другие бегут. Сила и сталь — твой ответ "
+        "почти на любую угрозу."
+    ),
+    "arch_rogue_desc": (
+        "Тень и точный расчёт надёжнее грубой силы. Ты входишь незамеченным и "
+        "уходишь раньше, чем поднимут тревогу."
+    ),
+    "arch_ranger_desc": (
+        "Дикие тропы — твой дом, и добыча не уйдёт за горизонт. Меткий глаз и "
+        "быстрые ноги ведут тебя там, где теряются другие."
+    ),
+    "arch_sage_desc": (
+        "Ты ищешь знание, что дремлет в старых камнях и забытых словах. Там, где "
+        "сила бессильна, решает понимание."
+    ),
+    "arch_priest_desc": (
+        "Твоя вера — щит для спутников и свет в самой глухой ночи. Ты исцеляешь "
+        "тела и держишь дух отряда."
+    ),
+    "arch_bard_desc": (
+        "Слово и песня открывают двери, запертые для клинка. Ты вдохновляешь "
+        "друзей и сбиваешь с толку врагов."
+    ),
+    "arch_savage_desc": (
+        "Ты вырос там, где выживает лишь сильнейший, и носишь эту ярость с собой. "
+        "В бою ты буря, которую не остановить."
+    ),
+    "arch_wanderer_desc": (
+        "Ни один путь тебе не чужой, ни одна земля не держит надолго. Ты читаешь "
+        "приметы дороги и находишь тропу там, где её нет."
+    ),
+    # starting-item labels (archetype gear)
+    "item_sword": "Меч", "item_shield": "Щит",
+    "item_daggers": "Кинжалы", "item_lockpicks": "Отмычки",
+    "item_bow": "Лук", "item_arrows": "Стрелы",
+    "item_spellbook": "Книга заклинаний", "item_staff": "Посох",
+    "item_holy_symbol": "Символ веры", "item_healing_herbs": "Целебные травы",
+    "item_lute": "Лютня", "item_wine_flask": "Фляга вина",
+    "item_axe": "Топор", "item_beast_pelt": "Звериная шкура",
+    "item_herbs": "Травы", "item_wanderers_staff": "Посох странника",
+    # flow
+    "new_pick_archetype": "Выбери путь героя:",
+    "new_arch_boost": "Этот путь усиливает: {stat}",
+    "new_alloc_intro": (
+        "У тебя 5 характеристик. Распредели значения 1, 1, 2, 2, 3 между ними — "
+        "каждое значение по одному разу."
+    ),
+    "new_alloc_unassigned": "—",
+    "new_alloc_tap_value": "Нажми значение, затем выбери, какой характеристике его отдать.",
+    "new_assign_prompt": "Кому отдать {value}?",
+    "new_confirm_title": "Проверь героя:",
+    "new_confirm_archetype_line": "Путь: {icon} {name}",
+    "new_confirm_items_line": "📦 Стартовые предметы: {items}",
+    "new_boost_mark": " (+1 путь)",
+    "sheet_archetype": "🎲 Путь: {icon} {name}",
+    "btn_confirm": "✅ Подтвердить",
+    "btn_other_path": "⬅️ Другой путь",
+    "btn_done": "✅ Готово",
+    "btn_create_hero": "✅ Создать героя",
+    "btn_restart": "🔄 Начать заново",
+})

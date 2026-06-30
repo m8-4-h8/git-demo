@@ -17,7 +17,9 @@ power-user fallback.
 - `/start`, `/menu` — friendly intro + the main button menu
 - `/tutorial` — interactive, paged walkthrough
 - `/guide`, `/help` — how to play and the command list
-- `/new` — create your character (a short step-by-step dialog)
+- `/new` — create your hero: pick a path/archetype, then distribute the
+  1,1,2,2,3 stat spread (the path adds +1 to its favoured stat) and start with
+  some themed gear
 - `/me` — show your character sheet
 - `/set <track> <value>` — change `health`/`spirit`/`supply`/`momentum`
 - `/roll <stat> [adds] [burn]` — action roll using your character's stat;

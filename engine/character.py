@@ -52,6 +52,7 @@ class Character:
     momentum: int = MOMENTUM_START
     items: list[str] = field(default_factory=list)
     background: str | None = None
+    archetype: str | None = None
 
 
 def bounds_for(field: str) -> tuple[int, int]:

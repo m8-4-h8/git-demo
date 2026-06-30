@@ -17,7 +17,11 @@ import asyncio
 import os
 
 from narrator.context import NarratorContext
-from narrator.prompts import build_system_prompt, build_user_prompt
+from narrator.prompts import (
+    build_intro_prompt,
+    build_system_prompt,
+    build_user_prompt,
+)
 
 MODEL = "mistral"
 MAX_TOKENS = 150
@@ -26,7 +30,7 @@ DEFAULT_TIMEOUT = 8.0
 DEFAULT_BASE_URL = "http://localhost:11434"
 
 # Re-exported so callers can `from narrator import NarratorContext`.
-__all__ = ["NarratorContext", "narrate", "is_enabled"]
+__all__ = ["NarratorContext", "narrate", "narrate_intro", "is_enabled"]
 
 # Lazily-created, reused across calls so we don't build a client per roll.
 _default_client = None
@@ -70,6 +74,32 @@ def _extract_text(data: object) -> str:
     return (message.get("content") or "").strip()
 
 
+async def _chat(
+    system: str, user: str, language: str, *, client, timeout: float
+) -> str | None:
+    """POST one system+user pair to Ollama and return the text, or None on error."""
+    payload = {
+        "model": _model(),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "options": {"temperature": TEMPERATURE, "num_predict": MAX_TOKENS},
+    }
+    try:
+        if client is None:
+            client = _get_client()
+        response = await asyncio.wait_for(
+            client.post(f"{_base_url()}/api/chat", json=payload), timeout=timeout
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        return None
+    return _extract_text(data) or None
+
+
 async def narrate(
     context: NarratorContext,
     *,
@@ -91,26 +121,34 @@ async def narrate(
     """
     if not is_enabled():
         return None
+    return await _chat(
+        build_system_prompt(context.language),
+        build_user_prompt(context),
+        context.language,
+        client=client,
+        timeout=timeout,
+    )
 
-    payload = {
-        "model": _model(),
-        "messages": [
-            {"role": "system", "content": build_system_prompt(context.language)},
-            {"role": "user", "content": build_user_prompt(context)},
-        ],
-        "stream": False,
-        "options": {"temperature": TEMPERATURE, "num_predict": MAX_TOKENS},
-    }
 
-    try:
-        if client is None:
-            client = _get_client()
-        response = await asyncio.wait_for(
-            client.post(f"{_base_url()}/api/chat", json=payload), timeout=timeout
-        )
-        response.raise_for_status()
-        data = response.json()
-    except Exception:
+async def narrate_intro(
+    name: str,
+    archetype: str,
+    language: str,
+    *,
+    client: object | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """Return one opening line introducing a freshly-created hero, or ``None``.
+
+    Optional and fail-soft, exactly like :func:`narrate`: returns ``None`` when
+    the narrator is disabled or anything goes wrong.
+    """
+    if not is_enabled():
         return None
-
-    return _extract_text(data) or None
+    return await _chat(
+        build_system_prompt(language),
+        build_intro_prompt(name, archetype, language),
+        language,
+        client=client,
+        timeout=timeout,
+    )

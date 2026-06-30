@@ -57,3 +57,16 @@ def build_user_prompt(context: NarratorContext) -> str:
         f"Respond in: {'Russian' if context.language == 'ru' else 'English'}",
     ]
     return "\n".join(lines)
+
+
+def build_intro_prompt(name: str, archetype: str, language: str) -> str:
+    """Ask for a single evocative opening line introducing a freshly-made hero."""
+    lang_name = "Russian" if language == "ru" else "English"
+    return (
+        "A new hero steps onto the stage of their saga.\n"
+        f"Name: {name}\n"
+        f"Path / archetype: {archetype}\n\n"
+        "Write ONE short, evocative opening sentence (under 30 words) that "
+        "introduces this hero as their journey begins — atmosphere only, no "
+        f"mechanics, no stats. Respond in {lang_name}, prose only."
+    )

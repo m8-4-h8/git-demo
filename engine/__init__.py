@@ -17,6 +17,16 @@ from engine.character import (
     set_field,
     stat_value,
 )
+from engine.classes import (
+    ARCHETYPES,
+    CharacterArchetype,
+    STARTING_ALLOCATION,
+    apply_archetype_bonus,
+    archetype_keys,
+    create_with_archetype,
+    get_archetype,
+    validate_allocation,
+)
 from engine.core import greeting
 from engine.oracles import (
     Answer,
@@ -89,6 +99,15 @@ __all__ = [
     "add_item",
     "remove_item",
     "set_background",
+    # archetypes
+    "ARCHETYPES",
+    "CharacterArchetype",
+    "STARTING_ALLOCATION",
+    "archetype_keys",
+    "get_archetype",
+    "validate_allocation",
+    "apply_archetype_bonus",
+    "create_with_archetype",
     # progress mechanics
     "Rank",
     "progress_per_hit",
