@@ -38,13 +38,14 @@ The frontend is Telegram, but the game core is frontend-independent.
   namespaced `callback_data` scheme (`area:action[:arg…]`) live in `bot/menu.py`;
   a single `menu_callback` routes `menu|move|roll|oracle|char|vow|track|help:`,
   while the guided creation flows own the `cnew|vnew|tnew:` prefixes.
-- **`narrator/`** is an OPTIONAL LLM prose layer (Anthropic). After a mechanical
-  outcome (a roll, a vow fulfillment, an encounter) it writes 2-3 sentences of
-  flavor — it **describes, never decides**
-  (the `engine` is the source of truth). It may import `engine` types but never
-  `bot`/`telegram`. Gated by the `NARRATOR_ENABLED` env flag and fails soft
-  (returns `None`) so the bot works without it.
-- **`gm/`** is an OPTIONAL AI Game Master (Anthropic). It proposes scenarios,
+- **`narrator/`** is an OPTIONAL LLM prose layer (local LLM via Ollama, over
+  async HTTP with `httpx`). After a mechanical outcome (a roll, a vow
+  fulfillment, an encounter) it writes 2-3 sentences of flavor — it
+  **describes, never decides** (the `engine` is the source of truth). It may
+  import `engine` types but never `bot`/`telegram`. Gated by the
+  `NARRATOR_ENABLED` env flag and fails soft (returns `None`) so the bot works
+  without it. Model/host via `OLLAMA_MODEL`/`OLLAMA_BASE_URL`.
+- **`gm/`** is an OPTIONAL AI Game Master (local LLM via Ollama). It proposes scenarios,
   describes the evolving world after each action, introduces NPCs/threats, and
   keeps continuity across turns — but **generates narrative only, never
   mechanics** (the `engine` decides rolls/outcomes). It may import `engine`
@@ -74,8 +75,8 @@ See `README.md` for venv setup. Run the bot with `python -m bot`
 engine/   # pure game core (rules incl. moves layer), no telegram/storage imports
 storage/  # async SQLite persistence (aiosqlite); may import engine
 bot/      # thin Telegram frontend (handlers, entrypoint, i18n)
-narrator/ # optional LLM prose layer (Anthropic); describes, never decides
-gm/       # optional AI Game Master (Anthropic); narrative & scenes, never mechanics
+narrator/ # optional LLM prose layer (Ollama via httpx); describes, never decides
+gm/       # optional AI Game Master (Ollama via httpx); narrative & scenes, never mechanics
 data/     # oracle tables (JSON), editable content
 tests/    # unit tests (engine tested in isolation; storage via tmp db)
 ```

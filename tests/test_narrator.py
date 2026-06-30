@@ -1,4 +1,4 @@
-"""Tests for the narrator layer — the Anthropic API is always mocked.
+"""Tests for the narrator layer — the Ollama HTTP call is always mocked.
 
 We test the control flow (feature flag, timeout, error handling) and the prompt
 contents, never the quality of the generated prose.
@@ -11,36 +11,34 @@ from narrator import NarratorContext, narrate
 from narrator.prompts import build_user_prompt
 
 
-class _Block:
-    def __init__(self, text: str) -> None:
-        self.type = "text"
-        self.text = text
-
-
 class _Response:
+    """Mimics the slice of ``httpx.Response`` that narrate() touches."""
+
     def __init__(self, text: str) -> None:
-        self.content = [_Block(text)]
+        self._text = text
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        # Shape of Ollama's POST /api/chat reply.
+        return {"message": {"role": "assistant", "content": self._text}}
 
 
-class _Messages:
+class FakeClient:
+    """Mimics the surface narrate() uses: ``await client.post(url, json=...)``."""
+
     def __init__(self, *, text="prose", delay=0.0, error=None) -> None:
         self._text = text
         self._delay = delay
         self._error = error
 
-    async def create(self, **kwargs):
+    async def post(self, url, *, json=None, **kwargs):
         if self._error is not None:
             raise self._error
         if self._delay:
             await asyncio.sleep(self._delay)
         return _Response(self._text)
-
-
-class FakeClient:
-    """Mimics the surface narrate() uses: ``client.messages.create(...)``."""
-
-    def __init__(self, **kwargs) -> None:
-        self.messages = _Messages(**kwargs)
 
 
 def _ctx(language: str = "en") -> NarratorContext:

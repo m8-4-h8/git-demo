@@ -89,6 +89,23 @@ Telegram to confirm it responds. Character data is saved to a local SQLite file
 (`ironsworn.db` by default; override with `DB_PATH`). The database file is
 git-ignored.
 
+## Optional: AI Narrator & Game Master (Ollama)
+
+The narrator (short prose after each roll) and the AI Game Master (`/gm`) are
+optional and talk to a **local [Ollama](https://ollama.ai) server** — no API
+keys, nothing leaves your machine. Both fail soft: if Ollama isn't running the
+bot just skips the prose, so this is entirely opt-in.
+
+1. Install Ollama from <https://ollama.ai>.
+2. Pull a model: `ollama pull mistral` (or `neural-chat`, `dolphin-mixtral`, …).
+3. Run the server: `ollama serve` (listens on `http://localhost:11434`).
+4. In `.env`, set `NARRATOR_ENABLED=true` and/or `GM_ENABLED=true`.
+5. Optional overrides: `OLLAMA_MODEL=neural-chat` to pick another model, and
+   `OLLAMA_BASE_URL=http://localhost:11434` if Ollama runs elsewhere.
+
+These layers only ever **describe** outcomes; the `engine` always decides the
+mechanics.
+
 ## Tests
 
 ```bash

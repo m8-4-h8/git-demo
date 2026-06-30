@@ -30,14 +30,23 @@ def build_system_prompt(language: str) -> str:
 
 
 def build_scenario_prompt(language: str) -> str:
-    """Ask for three dark-fantasy scenario options."""
+    """Ask for three dark-fantasy scenario options as a plain JSON object.
+
+    Ollama is also told to constrain output to JSON (``format: "json"``), but we
+    spell out the exact shape here too so the text we parse is predictable.
+    """
     lang_name = "Russian" if language == "ru" else "English"
     return (
         "Propose exactly THREE distinct dark-fantasy campaign scenarios for a "
         "co-op Ironsworn-style game. For each, give a short evocative title, a "
         "concrete goal (one sworn quest, e.g. 'slay the dragon Kor'tan'), and a "
         "2-3 sentence opening scene that sets the hook. "
-        f"Write all text in {lang_name}."
+        f"Write all text in {lang_name}.\n\n"
+        "Return ONLY a JSON object (no prose, no markdown, no code fences) of "
+        "exactly this shape:\n"
+        '{"scenarios": [{"title": "...", "goal": "...", "opening_scene": "..."}, '
+        '{"title": "...", "goal": "...", "opening_scene": "..."}, '
+        '{"title": "...", "goal": "...", "opening_scene": "..."}]}'
     )
 
 

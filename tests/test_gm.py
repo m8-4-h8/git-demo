@@ -1,4 +1,4 @@
-"""Tests for the AI Game Master layer — the Anthropic API is always mocked.
+"""Tests for the AI Game Master layer — the Ollama HTTP call is always mocked.
 
 We test control flow (flag, timeout, error handling, exactly-3 parsing) and the
 pure helpers, never the quality of generated prose.
@@ -18,32 +18,32 @@ from gm import (
 from gm.context import SCENE_HISTORY_LIMIT, from_state_dict, to_state_dict
 
 
-class _Block:
-    def __init__(self, text: str) -> None:
-        self.type = "text"
-        self.text = text
-
-
 class _Response:
+    """Mimics the slice of ``httpx.Response`` the GM client touches."""
+
     def __init__(self, text: str) -> None:
-        self.content = [_Block(text)]
+        self._text = text
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        # Shape of Ollama's POST /api/chat reply.
+        return {"message": {"role": "assistant", "content": self._text}}
 
 
-class _Messages:
+class FakeClient:
+    """Mimics the surface the GM client uses: ``await client.post(url, json=...)``."""
+
     def __init__(self, *, text="scene", delay=0.0, error=None) -> None:
         self._text, self._delay, self._error = text, delay, error
 
-    async def create(self, **kwargs):
+    async def post(self, url, *, json=None, **kwargs):
         if self._error is not None:
             raise self._error
         if self._delay:
             await asyncio.sleep(self._delay)
         return _Response(self._text)
-
-
-class FakeClient:
-    def __init__(self, **kwargs) -> None:
-        self.messages = _Messages(**kwargs)
 
 
 def _scenarios_json(n: int) -> str:
