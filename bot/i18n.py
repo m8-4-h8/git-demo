@@ -750,3 +750,56 @@ TEXTS["ru"].update({
     "gm_npcs_btn": "🎭 NPC",
     "gm_stop_btn": "⏹ Завершить кампанию",
 })
+
+
+# --- Inventory & background --------------------------------------------------
+TEXTS["en"].update({
+    # sheet additions
+    "sheet_items": "📦 Inventory: {items}",
+    "sheet_items_empty": "empty",
+    "sheet_background": "📖 Story: {text}",
+    "sheet_background_empty": "not set",
+    # character-menu buttons
+    "item_add_btn": "➕ Add item",
+    "item_del_btn": "➖ Remove item",
+    "bg_set_btn": "✏️ Set story",
+    # add item
+    "item_add_prompt": "Type the item's name: (/cancel to abort)",
+    "item_empty_name": "Please enter a non-empty name.",
+    "item_too_long": "Too long — at most {max} characters.",
+    "inventory_full": "Inventory is full (max {max} items).",
+    "item_added": "📦 Added: {item}",
+    # remove item
+    "item_remove_title": "Pick an item to remove:",
+    "inventory_empty": "Your inventory is empty.",
+    "item_removed": "🗑 Removed: {item}",
+    # background
+    "bg_prompt": "Tell your hero's story (up to {max} characters): (/cancel to abort)",
+    "bg_too_long": "Too long — at most {max} characters.",
+    "bg_set": "📖 Story updated.",
+})
+TEXTS["ru"].update({
+    # sheet additions
+    "sheet_items": "📦 Инвентарь: {items}",
+    "sheet_items_empty": "пусто",
+    "sheet_background": "📖 История: {text}",
+    "sheet_background_empty": "не задана",
+    # character-menu buttons
+    "item_add_btn": "➕ Добавить предмет",
+    "item_del_btn": "➖ Убрать предмет",
+    "bg_set_btn": "✏️ Задать историю",
+    # add item
+    "item_add_prompt": "Введи название предмета: (/cancel — отмена)",
+    "item_empty_name": "Введи непустое название.",
+    "item_too_long": "Слишком длинно — максимум {max} символов.",
+    "inventory_full": "Инвентарь полон (максимум {max} предметов).",
+    "item_added": "📦 Добавлено: {item}",
+    # remove item
+    "item_remove_title": "Выбери предмет для удаления:",
+    "inventory_empty": "Инвентарь пуст.",
+    "item_removed": "🗑 Убрано: {item}",
+    # background
+    "bg_prompt": "Расскажи историю героя (до {max} символов): (/cancel — отмена)",
+    "bg_too_long": "Слишком длинно — максимум {max} символов.",
+    "bg_set": "📖 История обновлена.",
+})

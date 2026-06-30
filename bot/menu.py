@@ -95,10 +95,23 @@ def character_menu(lang: str, has_character: bool) -> _Kb:
         rows = [
             [_Btn(t(lang, "char_show_btn"), callback_data="char:show")],
             [_Btn(t(lang, "char_set_btn"), callback_data="char:set")],
+            [_Btn(t(lang, "item_add_btn"), callback_data="iadd:start"),
+             _Btn(t(lang, "item_del_btn"), callback_data="char:delitem")],
+            [_Btn(t(lang, "bg_set_btn"), callback_data="bgset:start")],
         ]
     else:
         rows = [[_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")]]
     rows.append(_nav(lang, HOME))
+    return _Kb(rows)
+
+
+def item_remove_keyboard(lang: str, items: list[str]) -> _Kb:
+    """One button per inventory item; tapping removes it (``char:delitem:<idx>``)."""
+    rows = [
+        [_Btn(f"➖ {item}", callback_data=f"char:delitem:{index}")]
+        for index, item in enumerate(items)
+    ]
+    rows.append(_nav(lang, "char:menu"))
     return _Kb(rows)
 
 

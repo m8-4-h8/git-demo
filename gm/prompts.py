@@ -56,14 +56,20 @@ def _campaign_block(context: GMContext) -> str:
         or "none yet"
     )
     recent = " || ".join(context.scene_history[-3:]) or "none"
-    return (
-        f"Scenario: {context.scenario_title} — goal: {context.scenario_goal}\n"
-        f"Party: {', '.join(context.active_characters) or 'unknown'}\n"
-        f"Active vows: {', '.join(context.active_vows) or 'none'}\n"
-        f"Known NPCs: {npcs}\n"
-        f"Recent scenes: {recent}\n"
-        f"Current scene: {context.current_scene or 'none'}"
-    )
+    lines = [
+        f"Scenario: {context.scenario_title} — goal: {context.scenario_goal}",
+        f"Party: {', '.join(context.active_characters) or 'unknown'}",
+        f"Active vows: {', '.join(context.active_vows) or 'none'}",
+        f"Known NPCs: {npcs}",
+        f"Recent scenes: {recent}",
+        f"Current scene: {context.current_scene or 'none'}",
+    ]
+    # Optional flavour about the acting hero (present only when the bot has it).
+    if context.background:
+        lines.append(f"Acting hero's story: {context.background}")
+    if context.items:
+        lines.append(f"Acting hero's gear: {', '.join(context.items)}")
+    return "\n".join(lines)
 
 
 def build_scene_prompt(context: GMContext, last_move_result: str) -> str:

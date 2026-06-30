@@ -7,7 +7,8 @@ the pure :class:`engine.character.Character` model; it holds no game rules.
 
 from __future__ import annotations
 
-from dataclasses import astuple, fields
+import json
+from dataclasses import fields
 
 import aiosqlite
 
@@ -32,9 +33,36 @@ CREATE TABLE IF NOT EXISTS characters (
     spirit INTEGER NOT NULL,
     supply INTEGER NOT NULL,
     momentum INTEGER NOT NULL,
+    items TEXT NOT NULL DEFAULT '[]',
+    background TEXT,
     PRIMARY KEY ({", ".join(_KEY_COLUMNS)})
 )
 """
+
+# Columns added after the first release; (name, DDL) for additive migrations.
+_MIGRATIONS = (
+    ("items", "TEXT NOT NULL DEFAULT '[]'"),
+    ("background", "TEXT"),
+)
+
+
+def _to_row(character: Character) -> tuple:
+    """Map a Character to a value tuple in ``_FIELDS`` order (items as JSON)."""
+    values = []
+    for name in _FIELDS:
+        value = getattr(character, name)
+        if name == "items":
+            value = json.dumps(value)
+        values.append(value)
+    return tuple(values)
+
+
+def _from_row(row) -> Character:
+    """Build a Character from a row, decoding ``items`` and defaulting old NULLs."""
+    data = dict(zip(_FIELDS, row))
+    raw_items = data.get("items")
+    data["items"] = json.loads(raw_items) if raw_items else []
+    return Character(**data)
 
 
 class CharacterExists(Exception):
@@ -48,10 +76,21 @@ class CharacterStore:
         self._db_path = db_path
 
     async def init(self) -> None:
-        """Create the characters table if it does not exist."""
+        """Create the characters table, migrating older schemas additively."""
         async with connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
+            await self._migrate(db)
             await db.commit()
+
+    async def _migrate(self, db: aiosqlite.Connection) -> None:
+        """Add any columns missing from an older ``characters`` table."""
+        async with db.execute("PRAGMA table_info(characters)") as cursor:
+            existing = {row[1] for row in await cursor.fetchall()}
+        for column, ddl in _MIGRATIONS:
+            if column not in existing:
+                await db.execute(
+                    f"ALTER TABLE characters ADD COLUMN {column} {ddl}"
+                )
 
     async def get(self, chat_id: int, user_id: int) -> Character | None:
         """Return the character for (chat, user), or None if there is none."""
@@ -62,7 +101,7 @@ class CharacterStore:
                 (chat_id, user_id),
             ) as cursor:
                 row = await cursor.fetchone()
-        return Character(*row) if row is not None else None
+        return _from_row(row) if row is not None else None
 
     async def create(
         self, chat_id: int, user_id: int, character: Character
@@ -74,7 +113,7 @@ class CharacterStore:
         """
         all_columns = (*_KEY_COLUMNS, *_FIELDS)
         placeholders = ", ".join("?" for _ in all_columns)
-        values = (chat_id, user_id, *astuple(character))
+        values = (chat_id, user_id, *_to_row(character))
         async with connect(self._db_path) as db:
             try:
                 await db.execute(
@@ -97,14 +136,14 @@ class CharacterStore:
                 (chat_id,),
             ) as cursor:
                 rows = await cursor.fetchall()
-        return [Character(*row) for row in rows]
+        return [_from_row(row) for row in rows]
 
     async def update(
         self, chat_id: int, user_id: int, character: Character
     ) -> None:
         """Overwrite the stored character for (chat, user)."""
         assignments = ", ".join(f"{name} = ?" for name in _FIELDS)
-        values = (*astuple(character), chat_id, user_id)
+        values = (*_to_row(character), chat_id, user_id)
         async with connect(self._db_path) as db:
             await db.execute(
                 f"UPDATE characters SET {assignments} "

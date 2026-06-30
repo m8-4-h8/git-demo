@@ -8,9 +8,12 @@ a CLI, tests, or any future frontend without modification.
 
 from engine.character import (
     Character,
+    add_item,
     bounds_for,
     new_character,
+    remove_item,
     reset_momentum,
+    set_background,
     set_field,
     stat_value,
 )
@@ -83,6 +86,9 @@ __all__ = [
     "set_field",
     "bounds_for",
     "reset_momentum",
+    "add_item",
+    "remove_item",
+    "set_background",
     # progress mechanics
     "Rank",
     "progress_per_hit",

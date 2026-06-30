@@ -16,6 +16,7 @@ from gm import (
     push_scene,
 )
 from gm.context import SCENE_HISTORY_LIMIT, from_state_dict, to_state_dict
+from gm.prompts import build_scene_prompt
 
 
 class _Response:
@@ -148,6 +149,25 @@ def test_state_dict_round_trips() -> None:
     )
     restored = from_state_dict(json.loads(json.dumps(state)))
     assert restored == state
+
+
+def test_scene_prompt_includes_optional_hero_flavour() -> None:
+    ctx = GMContext(
+        scenario_title="T", scenario_goal="G", current_scene="C",
+        background="A disgraced knight seeking redemption.",
+        items=["sword", "shield"],
+    )
+    prompt = build_scene_prompt(ctx, "Aila acted with iron — weak hit")
+    assert "A disgraced knight seeking redemption." in prompt
+    assert "sword, shield" in prompt
+
+
+def test_scene_prompt_omits_flavour_when_absent() -> None:
+    # Defaults: no background, no items — the GM still works as before.
+    ctx = GMContext(scenario_title="T", scenario_goal="G", current_scene="C")
+    prompt = build_scene_prompt(ctx, "x")
+    assert "Acting hero's story" not in prompt
+    assert "Acting hero's gear" not in prompt
 
 
 def test_state_dict_caps_history() -> None:

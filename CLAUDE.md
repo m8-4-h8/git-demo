@@ -19,10 +19,16 @@ The frontend is Telegram, but the game core is frontend-independent.
 - **`engine/`** holds ALL game logic and rules (rolls, oracles, character
   model). It must **never import anything from `telegram`** (or any other
   frontend) **nor from `storage`**. Pure, deterministic, fully unit-testable
-  functions.
+  functions. The `Character` sheet carries the name, five stats, three tracks
+  and momentum, plus an `items: list[str]` inventory and an optional
+  `background: str | None` story; `add_item`/`remove_item`/`set_background`
+  are pure helpers with limits (≤20 items, ≤50 chars each, ≤500-char story).
 - **`storage/`** is the persistence layer (async SQLite via `aiosqlite`). It may
   import `engine` (e.g. the `Character` model); `engine` never imports it.
-  Characters are keyed by `(chat_id, user_id)` for co-op in one chat.
+  Characters are keyed by `(chat_id, user_id)` for co-op in one chat. The
+  `characters` table is migrated additively (e.g. `items` JSON + `background`
+  columns added via `ALTER TABLE`), so older databases keep working with
+  defaulted values.
 - **`engine/moves.py`** holds the named-moves layer: a small v1 set of moves
   (Strike, Face Danger, …) grouped by category (Adventure/Combat/Quest), each
   with per-outcome effects on the character's tracks/momentum. `resolve_move`

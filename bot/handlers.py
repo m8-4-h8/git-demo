@@ -48,6 +48,7 @@ from engine import (
     Rank,
     TrackType,
     YesNoResult,
+    add_item,
     apply_effects,
     ask_yes_no,
     bounds_for,
@@ -63,14 +64,24 @@ from engine import (
     mark_vow_progress,
     new_character,
     random_table,
+    remove_item,
     reset_momentum,
     resolve_move,
     roll_action,
+    set_background,
     set_field,
     stat_value,
     table_title,
 )
-from engine.character import MOMENTUM_RESET, STAT_MAX, STAT_MIN, TRACK_MIN
+from engine.character import (
+    MAX_BACKGROUND_LENGTH,
+    MAX_ITEM_LENGTH,
+    MAX_ITEMS,
+    MOMENTUM_RESET,
+    STAT_MAX,
+    STAT_MIN,
+    TRACK_MIN,
+)
 from gm import (
     GMContext,
     generate_complication,
@@ -86,6 +97,8 @@ from storage import CharacterExists
 NAME, EDGE, HEART, IRON, SHADOW, WITS = range(6)
 # Conversation states for vow / track creation.
 VOW_RANK, VOW_TITLE, TRACK_TYPE, TRACK_RANK, TRACK_TITLE = range(6, 11)
+# Conversation states for inventory / background editing.
+ITEM_NAME, BG_TEXT = range(11, 13)
 
 _OUTCOME_KEYS = {
     Outcome.STRONG: "outcome_strong",
@@ -336,7 +349,7 @@ def _schedule_gm_scene(
     if not gm_enabled():
         return
     chat = update.effective_chat
-    chat_id, _user_id = _ids(update)
+    chat_id, user_id = _ids(update)
     gm_store = _gm_store(context)
     char_store = _store(context)
     outcome = result.outcome
@@ -346,6 +359,7 @@ def _schedule_gm_scene(
         if state is None:
             return  # no active campaign in this chat
         party = [c.name for c in await char_store.list(chat_id)]
+        actor = await char_store.get(chat_id, user_id)
         gm_context = GMContext(
             scenario_title=state["scenario_title"],
             scenario_goal=state["scenario_goal"],
@@ -355,6 +369,8 @@ def _schedule_gm_scene(
             active_vows=[state["scenario_goal"]],
             npc_memory=state["npc_memory"],
             language=lang,
+            background=actor.background if actor else None,
+            items=list(actor.items) if actor else [],
         )
         if outcome is Outcome.MISS:
             scene = await generate_complication(gm_context)
@@ -1164,6 +1180,34 @@ async def _menu_char(update, context, lang: str, parts: list[str]) -> None:
             character = set_field(character, field, new_value)
             await store.update(chat_id, user_id, character)
         await _render_stepper(query, character, field, lang)
+    elif sub == "delitem":
+        character = await store.get(chat_id, user_id)
+        if character is None:
+            return
+        if len(parts) >= 3:
+            try:
+                index = int(parts[2])
+            except ValueError:
+                return
+            try:
+                character = remove_item(character, index)
+            except ValueError:
+                return
+            await store.update(chat_id, user_id, character)
+        await _render_item_removal(query, character, lang)
+
+
+async def _render_item_removal(query, character, lang: str) -> None:
+    """Show the remove-item picker, or a 'back' note when the inventory is empty."""
+    if not character.items:
+        await query.edit_message_text(
+            t(lang, "inventory_empty"), reply_markup=menu.back_home(lang, "char:menu")
+        )
+        return
+    await query.edit_message_text(
+        t(lang, "item_remove_title"),
+        reply_markup=menu.item_remove_keyboard(lang, character.items),
+    )
 
 
 async def _render_stepper(query, character, field: str, lang: str) -> None:
@@ -1780,6 +1824,117 @@ def build_track_handler() -> ConversationHandler:
     )
 
 
+# --- inventory / background editing (button entry → typed input) -------------
+
+
+async def item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    chat_id, user_id = _ids(update)
+    if await _store(context).get(chat_id, user_id) is None:
+        await query.edit_message_text(
+            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+        )
+        return ConversationHandler.END
+    await query.edit_message_text(t(lang, "item_add_prompt"))
+    return ITEM_NAME
+
+
+async def item_add_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return ITEM_NAME
+    lang = await _lang(update, context)
+    name = (update.message.text or "").strip()
+    if not name:
+        await update.message.reply_text(t(lang, "item_empty_name"))
+        return ITEM_NAME
+    if len(name) > MAX_ITEM_LENGTH:
+        await update.message.reply_text(t(lang, "item_too_long", max=MAX_ITEM_LENGTH))
+        return ITEM_NAME
+
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    character = await store.get(chat_id, user_id)
+    if character is None:
+        await update.message.reply_text(t(lang, "no_character"))
+        return ConversationHandler.END
+    if len(character.items) >= MAX_ITEMS:
+        await update.message.reply_text(t(lang, "inventory_full", max=MAX_ITEMS))
+        return ConversationHandler.END
+
+    updated = add_item(character, name)
+    await store.update(chat_id, user_id, updated)
+    await update.message.reply_text(
+        t(lang, "item_added", item=name) + "\n\n" + _format_sheet(updated, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_item_handler() -> ConversationHandler:
+    """Add an inventory item: button entry → typed item name."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(item_add_start, pattern=r"^iadd:start$")],
+        states={ITEM_NAME: [MessageHandler(text, item_add_save)]},
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
+async def bg_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query is None:
+        return ConversationHandler.END
+    await query.answer()
+    lang = await _lang(update, context)
+    chat_id, user_id = _ids(update)
+    if await _store(context).get(chat_id, user_id) is None:
+        await query.edit_message_text(
+            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+        )
+        return ConversationHandler.END
+    await query.edit_message_text(t(lang, "bg_prompt", max=MAX_BACKGROUND_LENGTH))
+    return BG_TEXT
+
+
+async def bg_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message is None:
+        return BG_TEXT
+    lang = await _lang(update, context)
+    text_in = (update.message.text or "").strip()
+    if len(text_in) > MAX_BACKGROUND_LENGTH:
+        await update.message.reply_text(t(lang, "bg_too_long", max=MAX_BACKGROUND_LENGTH))
+        return BG_TEXT
+
+    chat_id, user_id = _ids(update)
+    store = _store(context)
+    character = await store.get(chat_id, user_id)
+    if character is None:
+        await update.message.reply_text(t(lang, "no_character"))
+        return ConversationHandler.END
+
+    updated = set_background(character, text_in)
+    await store.update(chat_id, user_id, updated)
+    await update.message.reply_text(
+        t(lang, "bg_set") + "\n\n" + _format_sheet(updated, lang),
+        reply_markup=menu.home_only(lang),
+    )
+    return ConversationHandler.END
+
+
+def build_background_handler() -> ConversationHandler:
+    """Set the hero's background story: button entry → typed prose."""
+    text = filters.TEXT & ~filters.COMMAND
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(bg_start, pattern=r"^bgset:start$")],
+        states={BG_TEXT: [MessageHandler(text, bg_save)]},
+        fallbacks=[CommandHandler("cancel", conv_cancel)],
+    )
+
+
 # --- formatting helpers ------------------------------------------------------
 
 
@@ -1909,7 +2064,7 @@ def _format_roll(result: ActionRoll, stat_name: str, lang: str) -> str:
 
 
 def _format_sheet(character: Character, lang: str) -> str:
-    return t(
+    base = t(
         lang, "sheet",
         name=character.name,
         edge_l=t(lang, "stat_edge"), edge=character.edge,
@@ -1923,6 +2078,13 @@ def _format_sheet(character: Character, lang: str) -> str:
         momentum_l=t(lang, "momentum"), momentum=character.momentum,
         reset_l=t(lang, "reset"), reset=MOMENTUM_RESET,
     )
+    items = ", ".join(character.items) if character.items else t(lang, "sheet_items_empty")
+    story = character.background or t(lang, "sheet_background_empty")
+    return "\n".join([
+        base,
+        t(lang, "sheet_items", items=items),
+        t(lang, "sheet_background", text=story),
+    ])
 
 
 def _format_ask(result: YesNoResult, question: str, lang: str) -> str:
