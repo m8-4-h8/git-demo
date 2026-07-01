@@ -9,7 +9,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -58,13 +58,35 @@ from storage import (
 DEFAULT_DB_PATH = "ironsworn.db"
 
 
+# Commands surfaced in Telegram's native "/" menu. Deliberately short: the UX
+# is button-first, so only the essentials are advertised — the rest keep
+# working as a hidden power-user fallback.
+_MENU_COMMANDS = ("menu", "new", "me", "help", "tutorial", "language", "cancel")
+
+
+async def _register_commands(application: Application) -> None:
+    """Publish the command menu (EN default + RU), without blocking startup."""
+    for language_code in (None, "ru"):
+        lang = language_code or "en"
+        commands = [
+            BotCommand(name, t(lang, f"cmd_{name}")) for name in _MENU_COMMANDS
+        ]
+        try:
+            await application.bot.set_my_commands(
+                commands, language_code=language_code
+            )
+        except Exception:  # noqa: BLE001 — cosmetic; never block startup
+            logger.warning("Could not register the bot command menu", exc_info=True)
+
+
 async def _post_init(application: Application) -> None:
-    """Initialise the stores before polling begins."""
+    """Initialise the stores and the command menu before polling begins."""
     await application.bot_data["store"].init()
     await application.bot_data["prefs"].init()
     await application.bot_data["vows"].init()
     await application.bot_data["tracks"].init()
     await application.bot_data["gm_state"].init()
+    await _register_commands(application)
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

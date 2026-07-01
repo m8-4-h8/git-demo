@@ -864,6 +864,19 @@ TEXTS["en"].update({
     "item_lute": "Lute", "item_wine_flask": "Wine flask",
     "item_axe": "Axe", "item_beast_pelt": "Beast pelt",
     "item_herbs": "Herbs", "item_wanderers_staff": "Wanderer's staff",
+    # UX polish: Telegram command menu, first-run CTA, conversation expiry
+    "cmd_menu": "open the main menu",
+    "cmd_new": "create your hero",
+    "cmd_me": "show your hero sheet",
+    "cmd_help": "commands and how to play",
+    "cmd_tutorial": "1-minute walkthrough",
+    "cmd_language": "switch RU/EN",
+    "cmd_cancel": "cancel the current dialog",
+    "menu_title_no_hero": (
+        "Main menu — start by creating a hero, then make moves, roll dice and "
+        "ask the Oracle:"
+    ),
+    "conv_expired": "⏳ That dialog expired. Open the menu and start again.",
     # flow
     "new_pick_archetype": "Choose your hero's path:",
     "new_arch_boost": "This path strengthens: {stat}",
@@ -943,6 +956,19 @@ TEXTS["ru"].update({
     "item_lute": "Лютня", "item_wine_flask": "Фляга вина",
     "item_axe": "Топор", "item_beast_pelt": "Звериная шкура",
     "item_herbs": "Травы", "item_wanderers_staff": "Посох странника",
+    # UX polish: Telegram command menu, first-run CTA, conversation expiry
+    "cmd_menu": "открыть главное меню",
+    "cmd_new": "создать героя",
+    "cmd_me": "лист героя",
+    "cmd_help": "команды и как играть",
+    "cmd_tutorial": "разбор за минуту",
+    "cmd_language": "переключить RU/EN",
+    "cmd_cancel": "отменить текущий диалог",
+    "menu_title_no_hero": (
+        "Главное меню — начни с создания героя, потом делай ходы, бросай кубики "
+        "и спрашивай Оракула:"
+    ),
+    "conv_expired": "⏳ Этот диалог устарел. Открой меню и начни заново.",
     # flow
     "new_pick_archetype": "Выбери путь героя:",
     "new_arch_boost": "Этот путь усиливает: {stat}",

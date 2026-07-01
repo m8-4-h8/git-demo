@@ -32,6 +32,17 @@ def test_main_menu_has_eight_entries() -> None:
     ]
 
 
+def test_main_menu_offers_creation_to_newcomers() -> None:
+    callbacks = _all_callbacks(menu.main_menu(LANG, has_character=False))
+    assert callbacks[0] == "cnew:start"  # the CTA leads the menu
+    assert "move:cat" in callbacks       # the full menu is still there
+
+
+def test_no_character_keyboard_offers_creation_and_home() -> None:
+    callbacks = _all_callbacks(menu.no_character_keyboard(LANG))
+    assert callbacks == ["cnew:start", menu.HOME]
+
+
 def test_move_categories_cover_enum_and_navigate() -> None:
     kb = menu.move_categories(LANG)
     callbacks = _all_callbacks(kb)
@@ -176,3 +187,11 @@ def test_lists_render_item_callbacks() -> None:
 
     track_cbs = _all_callbacks(menu.track_list_keyboard(LANG, vows))
     assert "track:act:1" in track_cbs and "track:act:2" in track_cbs
+
+
+def test_empty_lists_offer_creation() -> None:
+    vow_cbs = _all_callbacks(menu.vow_list_keyboard(LANG, []))
+    assert "vnew:start" in vow_cbs  # empty state carries a call to action
+
+    track_cbs = _all_callbacks(menu.track_list_keyboard(LANG, []))
+    assert "tnew:start" in track_cbs

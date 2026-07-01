@@ -31,8 +31,12 @@ def _nav(lang: str, back: str) -> list[_Btn]:
     ]
 
 
-def main_menu(lang: str) -> _Kb:
-    return _Kb([
+def main_menu(lang: str, has_character: bool = True) -> _Kb:
+    """The 8-button main menu; newcomers get a Create-hero CTA on top."""
+    rows = []
+    if not has_character:
+        rows.append([_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")])
+    rows += [
         [_Btn(t(lang, "menu_move"), callback_data="move:cat"),
          _Btn(t(lang, "menu_roll"), callback_data="roll:menu")],
         [_Btn(t(lang, "menu_vows"), callback_data="vow:menu"),
@@ -41,6 +45,15 @@ def main_menu(lang: str) -> _Kb:
          _Btn(t(lang, "menu_oracle"), callback_data="oracle:menu")],
         [_Btn(t(lang, "menu_gm"), callback_data="gm:menu"),
          _Btn(t(lang, "menu_help"), callback_data="help:show")],
+    ]
+    return _Kb(rows)
+
+
+def no_character_keyboard(lang: str) -> _Kb:
+    """Shown with 'you have no hero yet' — a way forward, not a dead end."""
+    return _Kb([
+        [_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")],
+        [_Btn(t(lang, "btn_home"), callback_data=HOME)],
     ])
 
 
@@ -149,10 +162,13 @@ def vow_menu(lang: str) -> _Kb:
 
 
 def vow_list_keyboard(lang: str, vows) -> _Kb:
+    """One button per vow; an empty list offers creating one right here."""
     rows = [
         [_Btn(f"#{v.id} {v.title}", callback_data=f"vow:act:{v.id}")]
         for v in vows
     ]
+    if not vows:
+        rows.append([_Btn(t(lang, "vow_new_btn"), callback_data="vnew:start")])
     rows.append(_nav(lang, "vow:menu"))
     return _Kb(rows)
 
@@ -178,10 +194,13 @@ def track_menu(lang: str) -> _Kb:
 
 
 def track_list_keyboard(lang: str, tracks) -> _Kb:
+    """One button per track; an empty list offers creating one right here."""
     rows = [
         [_Btn(f"#{tr.id} {tr.title}", callback_data=f"track:act:{tr.id}")]
         for tr in tracks
     ]
+    if not tracks:
+        rows.append([_Btn(t(lang, "track_new_btn"), callback_data="tnew:start")])
     rows.append(_nav(lang, "track:menu"))
     return _Kb(rows)
 

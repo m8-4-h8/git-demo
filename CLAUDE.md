@@ -9,7 +9,8 @@ The frontend is Telegram, but the game core is frontend-independent.
 
 ## Stack
 - Python 3.11+
-- python-telegram-bot 22.x (async)
+- python-telegram-bot 22.x (async), with the `[job-queue]` extra (APScheduler)
+  for conversation timeouts
 - SQLite for persistence, async via `aiosqlite` (lives in `storage/`)
 - pytest
 - Dependencies via `requirements.txt` + a virtualenv (`venv/`)
@@ -56,7 +57,12 @@ The frontend is Telegram, but the game core is frontend-independent.
   stat it strengthens) → distribute 1,1,2,2,3 across the stats (each shown with a
   one-line explanation) → confirm a summary (boosted stat marked, starting gear
   listed) → create. If the narrator is on, one optional GM-style opening line
-  follows (fail-soft).
+  follows (fail-soft). UX conventions: Telegram's native "/" menu advertises a
+  short, curated command list (`set_my_commands`, RU/EN); newcomers without a
+  hero get a ✨ Create-hero CTA in the main menu and in every "no hero yet"
+  reply; empty vow/track lists offer a create button; a typing indicator shows
+  while the narrator/GM generate; every guided dialog expires after 10 minutes
+  (`conversation_timeout`) so an abandoned flow never swallows later messages.
 - **`narrator/`** is an OPTIONAL LLM prose layer (local LLM via Ollama, over
   async HTTP with `httpx`). After a mechanical outcome (a roll, a vow
   fulfillment, an encounter) it writes 2-3 sentences of flavor — it
