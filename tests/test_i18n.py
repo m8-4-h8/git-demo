@@ -47,6 +47,25 @@ def test_every_language_describes_the_command_menu() -> None:
             assert len(description) <= 256
 
 
+def test_every_language_names_and_describes_each_move() -> None:
+    from engine.moves import MOVES
+
+    for lang in LANGS:
+        for key in MOVES:
+            assert f"move_{key}" in TEXTS[lang], f"{lang} missing move_{key}"
+            assert f"move_{key}_desc" in TEXTS[lang], (
+                f"{lang} missing move_{key}_desc"
+            )
+
+
+def test_every_language_explains_settable_fields() -> None:
+    for lang in LANGS:
+        for field in ("health", "spirit", "supply", "momentum"):
+            assert f"field_desc_{field}" in TEXTS[lang], (
+                f"{lang} missing field_desc_{field}"
+            )
+
+
 def test_every_language_localizes_archetypes_and_gear() -> None:
     required = [f"stat_{s}_desc" for s in STAT_NAMES]
     for key in ARCHETYPES:

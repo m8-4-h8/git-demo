@@ -12,6 +12,11 @@ Every screen has 🔙 Back and 🏠 Menu. The only things you ever type are a he
 name and a vow/track title. The slash commands below all still work as a
 power-user fallback.
 
+Every screen also explains itself: moves show what they're for and their
+per-outcome effects before you commit, stat buttons carry your hero's values,
+rank buttons show how many progress boxes one mark fills, and every roll or
+move result ends with a 💡 hint on what to do next.
+
 ## Commands
 
 - `/start`, `/menu` — friendly intro + the main button menu

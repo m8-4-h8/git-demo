@@ -17,7 +17,7 @@ from engine.character import STAT_NAMES
 from engine.classes import ARCHETYPES
 from engine.moves import MOVES, MoveCategory, moves_in
 from engine.oracles import Odds
-from engine.progress import Rank
+from engine.progress import Rank, progress_per_hit
 from engine.tracks import TrackType
 
 HOME = "menu:main"
@@ -79,10 +79,22 @@ def moves_keyboard(lang: str, category: MoveCategory) -> _Kb:
     return _Kb(rows)
 
 
-def stat_keyboard(lang: str, prefix: str, back: str) -> _Kb:
-    """Stat picker; each button is ``{prefix}:{stat}``."""
+def _stat_label(lang: str, stat: str, character) -> str:
+    """A stat button label, carrying the hero's value when one is given."""
+    label = t(lang, f"stat_{stat}")
+    if character is not None:
+        label += f" · {getattr(character, stat)}"
+    return label
+
+
+def stat_keyboard(lang: str, prefix: str, back: str, character=None) -> _Kb:
+    """Stat picker; each button is ``{prefix}:{stat}``.
+
+    With ``character`` given, every button also shows the hero's value for
+    that stat, so the pick is an informed one.
+    """
     rows = [
-        [_Btn(t(lang, f"stat_{stat}"), callback_data=f"{prefix}:{stat}")]
+        [_Btn(_stat_label(lang, stat, character), callback_data=f"{prefix}:{stat}")]
         for stat in STAT_NAMES
     ]
     rows.append(_nav(lang, back))
@@ -246,9 +258,14 @@ def help_keyboard(lang: str) -> _Kb:
 
 
 def rank_keyboard(lang: str, prefix: str) -> _Kb:
-    """Difficulty rank picker; each button is ``{prefix}:{rank}``."""
+    """Difficulty rank picker; each button is ``{prefix}:{rank}``.
+
+    Every button carries "+N" — the progress boxes one mark fills at that
+    rank — so the difficulty trade-off is visible before choosing.
+    """
     return _Kb([
-        [_Btn(t(lang, f"rank_{r.value}"), callback_data=f"{prefix}:{r.value}")]
+        [_Btn(f"{t(lang, f'rank_{r.value}')} · +{progress_per_hit(r):g}",
+              callback_data=f"{prefix}:{r.value}")]
         for r in Rank
     ])
 
@@ -375,10 +392,16 @@ def session_moves_keyboard(lang: str) -> _Kb:
     return _Kb(rows)
 
 
-def session_stat_keyboard(lang: str, prefix: str, back: str = "sess:turn") -> _Kb:
-    """Stat picker for a session action (``{prefix}:{stat}``), plus a back button."""
+def session_stat_keyboard(
+    lang: str, prefix: str, back: str = "sess:turn", character=None
+) -> _Kb:
+    """Stat picker for a session action (``{prefix}:{stat}``), plus a back button.
+
+    Like :func:`stat_keyboard`, a given ``character`` puts the hero's values
+    on the buttons.
+    """
     rows = [
-        [_Btn(t(lang, f"stat_{stat}"), callback_data=f"{prefix}:{stat}")]
+        [_Btn(_stat_label(lang, stat, character), callback_data=f"{prefix}:{stat}")]
         for stat in STAT_NAMES
     ]
     rows.append([_Btn(t(lang, "btn_back"), callback_data=back)])

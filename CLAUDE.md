@@ -72,6 +72,17 @@ The frontend is Telegram, but the game core is frontend-independent.
   reply; empty vow/track lists offer a create button; a typing indicator shows
   while the narrator/GM generate; every guided dialog expires after 10 minutes
   (`conversation_timeout`) so an abandoned flow never swallows later messages.
+  **Self-explaining screens:** every picker says what it's for and what happens
+  next — move screens show the move's purpose and per-outcome effects before
+  the roll (`_move_blurb`/`_moves_overview` in `bot/handlers.py`), stat buttons
+  carry the hero's values, rank buttons show boxes-per-mark, vow/track action
+  screens show the target's progress plus what each action does, and every
+  roll/move result ends with a 💡 what-next hint (`_outcome_hint`); creation
+  flows (hero/vow/track) close with a next-step hint. Edits that may change
+  nothing (the ±1 stepper at a bound) go through `_edit_quietly`, which
+  swallows Telegram's "message is not modified" instead of erroring, and the
+  stepper explains the limit in place. The per-player language cache in
+  `user_data` is keyed by chat id (the stored preference is per chat+user).
   **Co-op sessions** live in `bot/session_handlers.py` (own module; imports the
   shared helpers from `bot/handlers.py`): `session_callback` routes the `sess:`
   prefix, and three conversations own `screate:` (create lobby → typed

@@ -14,6 +14,7 @@ from collections import Counter
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -69,6 +70,7 @@ from engine import (
     list_tables,
     mark_track_progress,
     mark_vow_progress,
+    moves_in,
     random_table,
     remove_item,
     reset_momentum,
@@ -151,15 +153,21 @@ def _ids(update: Update) -> tuple[int, int]:
 
 
 async def _lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    """Resolve the player's language (cached per session in user_data)."""
-    cached = context.user_data.get("lang")
+    """Resolve the player's language, cached per chat.
+
+    The preference is stored per (chat, user), so the in-memory cache must be
+    keyed by chat too — ``user_data`` alone is shared across all of a user's
+    chats.
+    """
+    chat_id, user_id = _ids(update)
+    cache = context.user_data.setdefault("lang", {})
+    cached = cache.get(chat_id)
     if cached:
         return cached
-    chat_id, user_id = _ids(update)
     stored = await _prefs(context).get_language(chat_id, user_id)
     code = update.effective_user.language_code if update.effective_user else None
     lang = resolve_lang(stored, code)
-    context.user_data["lang"] = lang
+    cache[chat_id] = lang
     return lang
 
 
@@ -298,7 +306,10 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         result = burn_momentum(result, character.momentum)
         await store.update(chat_id, user_id, reset_momentum(character))
 
-    await update.message.reply_text(_format_roll(result, stat_name, lang))
+    await update.message.reply_text(
+        _format_roll(result, stat_name, lang)
+        + "\n" + _outcome_hint(result.outcome, lang)
+    )
     _schedule_narration(update, context, result, stat_name, character.name, lang)
     _schedule_gm_scene(update, context, result, stat_name, character.name, lang)
 
@@ -524,6 +535,7 @@ async def _vow_new(update, context, lang: str, rest: list[str]) -> None:
     created = await _vow_store(context).create(chat_id, user_id, title, Rank(canonical))
     await update.message.reply_text(
         t(lang, "vow_created") + "\n\n" + _format_vow(created, lang)
+        + "\n\n" + t(lang, "vow_created_hint")
     )
 
 
@@ -675,6 +687,7 @@ async def _track_new(update, context, lang: str, rest: list[str]) -> None:
     )
     await update.message.reply_text(
         t(lang, "track_created") + "\n\n" + _format_track(created, lang)
+        + "\n\n" + t(lang, "track_created_hint")
     )
 
 
@@ -1048,17 +1061,27 @@ async def _menu_move(update, context, lang: str, parts: list[str]) -> None:
         except ValueError:
             return
         await query.edit_message_text(
-            t(lang, "move_pick_title"),
+            t(lang, "move_pick_title") + "\n\n"
+            + _moves_overview(lang, moves_in(category)),
             reply_markup=menu.moves_keyboard(lang, category),
         )
     elif sub == "mv":
         spec = MOVES.get(parts[2])
         if spec is None:
             return
+        chat_id, user_id = _ids(update)
+        character = await _store(context).get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "no_character"),
+                reply_markup=menu.no_character_keyboard(lang),
+            )
+            return
         await query.edit_message_text(
-            t(lang, "move_stat_title"),
+            _move_blurb(spec, lang),
             reply_markup=menu.stat_keyboard(
-                lang, f"move:st:{spec.key}", f"move:cat:{spec.category.value}"
+                lang, f"move:st:{spec.key}", f"move:cat:{spec.category.value}",
+                character=character,
             ),
         )
     elif sub == "st" and len(parts) >= 4:
@@ -1113,6 +1136,7 @@ def _format_move(result, applied, lang: str) -> str:
         lines.append(t(lang, "move_effect_header") + " " + changes)
     else:
         lines.append(t(lang, "move_no_effect"))
+    lines.append(_outcome_hint(result.roll.outcome, lang))
     return "\n".join(lines)
 
 
@@ -1123,9 +1147,18 @@ async def _menu_roll(update, context, lang: str, parts: list[str]) -> None:
     query = update.callback_query
     sub = parts[1] if len(parts) > 1 else ""
     if sub == "menu":
+        chat_id, user_id = _ids(update)
+        character = await _store(context).get(chat_id, user_id)
+        if character is None:
+            await query.edit_message_text(
+                t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+            )
+            return
         await query.edit_message_text(
             t(lang, "roll_pick_title"),
-            reply_markup=menu.stat_keyboard(lang, "roll:st", menu.HOME),
+            reply_markup=menu.stat_keyboard(
+                lang, "roll:st", menu.HOME, character=character
+            ),
         )
     elif sub == "st" and len(parts) >= 3:
         stat_name = parts[2]
@@ -1138,7 +1171,9 @@ async def _menu_roll(update, context, lang: str, parts: list[str]) -> None:
             return
         result = roll_action(stat_value(character, stat_name), 0)
         await update.effective_chat.send_message(
-            _format_roll(result, stat_name, lang), reply_markup=menu.home_only(lang)
+            _format_roll(result, stat_name, lang)
+            + "\n" + _outcome_hint(result.outcome, lang),
+            reply_markup=menu.home_only(lang),
         )
         _schedule_narration(update, context, result, stat_name, character.name, lang)
         _schedule_gm_scene(update, context, result, stat_name, character.name, lang)
@@ -1215,9 +1250,11 @@ async def _menu_char(update, context, lang: str, parts: list[str]) -> None:
         low, high = bounds_for(field)
         current = getattr(character, field)
         new_value = max(low, min(high, current + delta))
-        if new_value != current:
-            character = set_field(character, field, new_value)
-            await store.update(chat_id, user_id, character)
+        if new_value == current:  # already at the bound — explain, don't error
+            await _render_stepper(query, character, field, lang, at_limit=True)
+            return
+        character = set_field(character, field, new_value)
+        await store.update(chat_id, user_id, character)
         await _render_stepper(query, character, field, lang)
     elif sub == "delitem":
         character = await store.get(chat_id, user_id)
@@ -1249,12 +1286,32 @@ async def _render_item_removal(query, character, lang: str) -> None:
     )
 
 
-async def _render_stepper(query, character, field: str, lang: str) -> None:
-    await query.edit_message_text(
-        t(lang, "char_field_now",
-          field=_field_label(field, lang), value=getattr(character, field)),
-        reply_markup=menu.char_stepper(lang, field),
-    )
+async def _render_stepper(
+    query, character, field: str, lang: str, *, at_limit: bool = False
+) -> None:
+    """Show a track's stepper: current value, bounds, and what the track is for."""
+    low, high = bounds_for(field)
+    lines = [
+        t(lang, "char_field_now", field=_field_label(field, lang),
+          value=getattr(character, field), low=low, high=high),
+        t(lang, f"field_desc_{field}"),
+    ]
+    if at_limit:
+        lines.append(t(lang, "char_at_limit"))
+    await _edit_quietly(query, "\n".join(lines), menu.char_stepper(lang, field))
+
+
+async def _edit_quietly(query, text: str, reply_markup) -> None:
+    """Edit a message, swallowing Telegram's 'message is not modified' error.
+
+    Repeated taps that change nothing (e.g. +1 at a track's maximum) would
+    otherwise bubble up as a scary generic error to the player.
+    """
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup)
+    except BadRequest as error:
+        if "not modified" not in str(error).lower():
+            raise
 
 
 # --- vow flow ----------------------------------------------------------------
@@ -1277,9 +1334,21 @@ async def _menu_vow(update, context, lang: str, parts: list[str]) -> None:
             reply_markup=menu.vow_list_keyboard(lang, vows),
         )
     elif sub == "act" and len(parts) >= 3:
+        vow_id = int(parts[2])
+        target = await store.get(chat_id, user_id, vow_id)
+        if target is None:
+            await query.edit_message_text(
+                t(lang, "vow_not_found", ref=f"#{vow_id}"),
+                reply_markup=menu.back_home(lang, "vow:menu"),
+            )
+            return
         await query.edit_message_text(
-            t(lang, "vow_act_title"),
-            reply_markup=menu.vow_actions(lang, int(parts[2])),
+            "\n\n".join([
+                t(lang, "vow_act_title"),
+                _format_vow(target, lang),
+                t(lang, "vow_act_help"),
+            ]),
+            reply_markup=menu.vow_actions(lang, vow_id),
         )
     elif sub == "do" and len(parts) >= 4:
         await _vow_do(update, context, lang, parts[2], int(parts[3]))
@@ -1378,9 +1447,21 @@ async def _menu_track(update, context, lang: str, parts: list[str]) -> None:
             reply_markup=menu.track_list_keyboard(lang, tracks),
         )
     elif sub == "act" and len(parts) >= 3:
+        track_id = int(parts[2])
+        target = await store.get(chat_id, track_id)
+        if target is None:
+            await query.edit_message_text(
+                t(lang, "track_not_found", ref=f"#{track_id}"),
+                reply_markup=menu.back_home(lang, "track:menu"),
+            )
+            return
         await query.edit_message_text(
-            t(lang, "track_act_title"),
-            reply_markup=menu.track_actions(lang, int(parts[2])),
+            "\n\n".join([
+                t(lang, "track_act_title"),
+                _format_track(target, lang),
+                t(lang, "track_act_help"),
+            ]),
+            reply_markup=menu.track_actions(lang, track_id),
         )
     elif sub == "do" and len(parts) >= 4:
         await _track_do(update, context, lang, parts[2], int(parts[3]))
@@ -1471,7 +1552,7 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     chat_id, user_id = _ids(update)
     await _prefs(context).set_language(chat_id, user_id, choice)
-    context.user_data["lang"] = choice
+    context.user_data.setdefault("lang", {})[chat_id] = choice
     await query.edit_message_text(t(choice, "language_set", lang=choice.upper()))
 
 
@@ -1480,7 +1561,7 @@ async def _set_language(
 ) -> None:
     chat_id, user_id = _ids(update)
     await _prefs(context).set_language(chat_id, user_id, choice)
-    context.user_data["lang"] = choice
+    context.user_data.setdefault("lang", {})[chat_id] = choice
     await update.message.reply_text(t(choice, "language_set", lang=choice.upper()))
 
 
@@ -1806,7 +1887,8 @@ async def new_create(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop(_HERO_KEY, None)
     await query.edit_message_reply_markup(reply_markup=None)
     await update.effective_chat.send_message(
-        t(lang, "new_created") + "\n\n" + _format_sheet(character, lang),
+        t(lang, "new_created") + "\n\n" + _format_sheet(character, lang)
+        + "\n\n" + t(lang, "new_next_hint"),
         reply_markup=menu.home_only(lang),
     )
     _schedule_intro(update, context, character.name,
@@ -1940,7 +2022,8 @@ async def vnew_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         chat_id, user_id, title, Rank(data.get("rank", "troublesome"))
     )
     await update.message.reply_text(
-        t(lang, "vow_created") + "\n\n" + _format_vow(created, lang),
+        t(lang, "vow_created") + "\n\n" + _format_vow(created, lang)
+        + "\n\n" + t(lang, "vow_created_hint"),
         reply_markup=menu.home_only(lang),
     )
     return ConversationHandler.END
@@ -2015,7 +2098,8 @@ async def tnew_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         Rank(data.get("rank", "troublesome")),
     )
     await update.message.reply_text(
-        t(lang, "track_created") + "\n\n" + _format_track(created, lang),
+        t(lang, "track_created") + "\n\n" + _format_track(created, lang)
+        + "\n\n" + t(lang, "track_created_hint"),
         reply_markup=menu.home_only(lang),
     )
     return ConversationHandler.END
@@ -2164,6 +2248,45 @@ def _field_label(field: str, lang: str) -> str:
 
 def _outcome_label(outcome: Outcome, lang: str) -> str:
     return t(lang, _OUTCOME_KEYS[outcome])
+
+
+_HINT_KEYS = {
+    Outcome.STRONG: "hint_strong",
+    Outcome.WEAK: "hint_weak",
+    Outcome.MISS: "hint_miss",
+}
+
+
+def _outcome_hint(outcome: Outcome, lang: str) -> str:
+    """One 💡 line telling the player what to do after this outcome."""
+    return t(lang, _HINT_KEYS[outcome])
+
+
+def _moves_overview(lang: str, keys) -> str:
+    """One '• name: what it's for' line per move key, for pick screens."""
+    return "\n".join(
+        f"• {t(lang, f'move_{key}')}: {t(lang, f'move_{key}_desc')}"
+        for key in keys
+    )
+
+
+def _move_blurb(spec, lang: str) -> str:
+    """What a move is for and what each outcome does, ending in a stat prompt."""
+    lines = [
+        t(lang, "move_result_header", move=t(lang, f"move_{spec.key}")),
+        t(lang, f"move_{spec.key}_desc"),
+        "",
+        t(lang, "move_effects_header"),
+    ]
+    for outcome in (Outcome.STRONG, Outcome.WEAK, Outcome.MISS):
+        effects = spec.effects.get(outcome, {})
+        changes = ", ".join(
+            f"{_field_label(field, lang)} {change:+d}"
+            for field, change in effects.items()
+        ) or t(lang, "move_no_effect")
+        lines.append(f"{_outcome_label(outcome, lang)}: {changes}")
+    lines += ["", t(lang, "move_stat_title")]
+    return "\n".join(lines)
 
 
 def _odds_label(odds: Odds, lang: str) -> str:

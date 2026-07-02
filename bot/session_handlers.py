@@ -43,6 +43,9 @@ from bot.handlers import (
     _format_roll,
     _ids,
     _lang,
+    _move_blurb,
+    _moves_overview,
+    _outcome_hint,
     _schedule_gm_scene,
     _show_typing,
     _store,
@@ -505,7 +508,7 @@ async def _turn_action(
 ) -> None:
     """Dispatch an already-authorized game-turn button."""
     query = update.callback_query
-    chat_id, _ = _ids(update)
+    chat_id, user_id = _ids(update)
     lang = record.lang
     if action == "turn":  # back from a picker to the action list
         await _render_turn(context, chat_id, record)
@@ -516,14 +519,15 @@ async def _turn_action(
         await _advance(context, chat_id, record)
     elif action == "move":
         await query.edit_message_text(
-            t(lang, "session_pick_move"),
+            t(lang, "session_pick_move") + "\n\n" + _moves_overview(lang, MOVES),
             reply_markup=menu.session_moves_keyboard(lang),
         )
     elif action == "mv" and len(parts) >= 3 and parts[2] in MOVES:
+        character = await _store(context).get(chat_id, user_id)
         await query.edit_message_text(
-            t(lang, "session_pick_stat"),
+            _move_blurb(MOVES[parts[2]], lang),
             reply_markup=menu.session_stat_keyboard(
-                lang, f"sess:st:{parts[2]}"
+                lang, f"sess:st:{parts[2]}", character=character
             ),
         )
     elif action == "st" and len(parts) >= 4:
@@ -743,10 +747,11 @@ async def scust_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(t(lang, "session_not_your_turn"))
         return ConversationHandler.END
     context.user_data["scust_text"] = text[:MAX_CUSTOM_ACTION_LENGTH]
+    character = await _store(context).get(chat_id, user_id)
     await update.message.reply_text(
         t(record.lang, "scust_pick_stat"),
         reply_markup=menu.session_stat_keyboard(
-            record.lang, "scust:st", back="scust:back"
+            record.lang, "scust:st", back="scust:back", character=character
         ),
     )
     return CUSTOM_STAT
@@ -774,6 +779,7 @@ async def scust_stat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         t(record.lang, "session_custom_header",
           name=active_player(record.session).name, text=description)
         + "\n" + _format_roll(result, stat_name, record.lang)
+        + "\n" + _outcome_hint(result.outcome, record.lang)
     )
     _fire_narration(
         update,

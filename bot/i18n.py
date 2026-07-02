@@ -121,6 +121,9 @@ TEXTS: dict[str, dict[str, str]] = {
             "Language: /language"
         ),
         "help": (
+            "🕹 Everything works with buttons: /menu opens the main menu, and "
+            "every screen says what it is for. The commands below are an "
+            "optional shortcut.\n\n"
             "🎲 Commands\n"
             "/new — create your hero (step by step)\n"
             "/me — show your hero sheet\n"
@@ -218,6 +221,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "new_bad_stat": "Please enter a whole number from {lo} to {hi} for {stat}.",
         "new_already_exists": "You already have a hero. Use /me to view it or /set to change it.",
         "new_created": "Hero created!",
+        "new_next_hint": (
+            "💡 What's next: swear a vow (📜 in the menu) and make your first "
+            "move (⚔️). Lost? /tutorial helps."
+        ),
         "new_cancelled": "Hero creation cancelled.",
         "new_failed": "Could not create hero: {error}",
         # language
@@ -352,6 +359,9 @@ TEXTS: dict[str, dict[str, str]] = {
             "Язык: /language"
         ),
         "help": (
+            "🕹 Всё управляется кнопками: /menu откроет главное меню, а каждый "
+            "экран объясняет, для чего он. Команды ниже — необязательный "
+            "быстрый путь.\n\n"
             "🎲 Команды\n"
             "/new — создать героя (по шагам)\n"
             "/me — лист героя\n"
@@ -448,6 +458,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "new_bad_stat": "Введи целое число от {lo} до {hi} для «{stat}».",
         "new_already_exists": "У тебя уже есть герой. Посмотри его через /me или меняй через /set.",
         "new_created": "Герой создан!",
+        "new_next_hint": (
+            "💡 Дальше: принеси обет (📜 в меню) и сделай первый ход (⚔️). "
+            "Запутался? Поможет /tutorial."
+        ),
         "new_cancelled": "Создание героя отменено.",
         "new_failed": "Не удалось создать героя: {error}",
         # language
@@ -609,7 +623,10 @@ TEXTS["ru"].update({
 TEXTS["en"].update({
     # navigation
     "btn_home": "🏠 Menu",
-    "menu_title": "Main menu — pick an action:",
+    "menu_title": (
+        "Main menu. The loop: act (⚔️ Move or 🎲 Roll) → unsure what the world "
+        "does? ask the 🔮 Oracle → mark 📜 vow progress. Pick an action:"
+    ),
     # main-menu buttons
     "menu_move": "⚔️ Make a Move",
     "menu_roll": "🎲 Roll",
@@ -631,48 +648,129 @@ TEXTS["en"].update({
     "move_gather_information": "Gather Information",
     "move_gather_your_resolve": "Gather Your Resolve",
     "move_reach_a_milestone": "Reach a Milestone",
+    # what each move is for (shown before the player commits to one)
+    "move_strike_desc": "attack on your terms — you have the upper hand",
+    "move_clash_desc": "fight toe to toe — the foe is just as ready",
+    "move_face_danger_desc": "overcome a hazard or act under pressure",
+    "move_secure_advantage_desc": "prepare and gain an edge before you act",
+    "move_gather_information_desc": "scout, question, study — learn something useful",
+    "move_gather_your_resolve_desc": "catch your breath and restore your spirit",
+    "move_reach_a_milestone_desc": "mark a meaningful step toward your goal",
     # move flow
-    "move_cat_title": "Choose a move category:",
-    "move_pick_title": "Choose a move:",
-    "move_stat_title": "Which stat do you roll?",
+    "move_cat_title": (
+        "A move is an action by the rules: you roll a stat and the outcome "
+        "applies to your sheet automatically. Pick a category:"
+    ),
+    "move_pick_title": "Pick a move — here is what each one is for:",
+    "move_stat_title": (
+        "Pick the stat you act with — its value is on the button, higher is "
+        "better:"
+    ),
+    "move_effects_header": "Possible outcomes:",
     "move_result_header": "⚔️ {move}",
     "move_effect_header": "Effect:",
     "move_no_effect": "No mechanical change.",
+    # what-next hints appended to roll/move results
+    "hint_strong": "💡 You are in control — describe your success and press on.",
+    "hint_weak": "💡 Success at a cost — narrate the complication, then continue.",
+    "hint_miss": (
+        "💡 It goes wrong — narrate the trouble, or ask the 🔮 Oracle what "
+        "happens next."
+    ),
     # roll / oracle flows
-    "roll_pick_title": "Roll which stat?",
-    "oracle_pick_title": "How likely is it?",
+    "roll_pick_title": (
+        "A raw action roll (d6 + stat vs two d10) with no fixed effect — you "
+        "narrate what it means. Pick the stat that fits what you do:"
+    ),
+    "oracle_pick_title": (
+        "Ask the world a yes/no question — out loud or in your head — then "
+        "pick how likely a «yes» is:"
+    ),
     # character submenu
-    "char_menu_title": "Character:",
+    "char_menu_title": (
+        "Your hero: view the sheet, adjust the tracks when the story demands "
+        "it, manage gear and backstory."
+    ),
     "char_show_btn": "📜 Sheet",
     "char_set_btn": "✏️ Adjust tracks",
     "char_create_btn": "✨ Create hero",
-    "char_set_title": "Which track to adjust?",
-    "char_field_now": "{field}: {value}",
+    "char_set_title": (
+        "Adjust a track when the fiction says so: wounds and healing, morale, "
+        "spent provisions, story drive. Which one?"
+    ),
+    "char_field_now": "{field}: {value} (range {low}…{high})",
+    "char_at_limit": "⛔ That is the limit — it cannot go further.",
+    # what each adjustable track is for (shown in the stepper)
+    "field_desc_health": "Health — your body: wounds, fatigue, healing.",
+    "field_desc_spirit": "Spirit — your morale and mental strength.",
+    "field_desc_supply": "Supply — provisions and gear for the road.",
+    "field_desc_momentum": (
+        "Momentum — story drive. On a roll you can burn it to replace your "
+        "score; afterwards it resets to +2."
+    ),
     # vows submenu
-    "vow_menu_title": "Vows:",
+    "vow_menu_title": (
+        "Vows are your sworn quests — the engine of the story: swear one, mark "
+        "progress as you play, then test the outcome."
+    ),
     "vow_list_title": "Choose a vow:",
     "vow_act_title": "What do you do with this vow?",
+    "vow_act_help": (
+        "📈 Progress — mark a meaningful step toward the goal (boxes by rank).\n"
+        "✅ Fulfill — roll against your progress: the fuller the bar, the "
+        "better the odds.\n"
+        "🏳 Forsake — abandon the vow (costs 1 Spirit)."
+    ),
     "vow_list_btn": "📜 List",
     "vow_new_btn": "✨ New vow",
     "vow_do_progress": "📈 Progress",
     "vow_do_fulfill": "✅ Fulfill",
     "vow_do_forsake": "🏳 Forsake",
-    "vnew_pick_rank": "Choose the vow's rank:",
+    "vnew_pick_rank": (
+        "How hard is the vow? Harder ranks fill the 10-box bar slower — the "
+        "+N on each button is boxes per mark:"
+    ),
     "vnew_ask_title": "Type the vow's title: (/cancel to abort)",
+    "vow_created_hint": (
+        "💡 Mark 📈 progress as you play; once the bar grows, try ✅ Fulfill — "
+        "the fuller it is, the better the odds."
+    ),
     # tracks submenu
-    "track_menu_title": "Group tracks:",
+    "track_menu_title": (
+        "Group tracks are shared challenges — a fight, a journey, a bond: "
+        "anyone in the chat can advance or resolve them."
+    ),
     "track_list_title": "Choose a track:",
     "track_act_title": "What do you do with this track?",
+    "track_act_help": (
+        "📈 Mark progress — the party advances (boxes by rank).\n"
+        "🏁 End — resolve by progress: 10 is a strong hit, 7+ a weak hit, "
+        "less is a miss.\n"
+        "🧹 Clear — reset the bar to zero and keep going."
+    ),
     "track_list_btn": "🗺️ List",
     "track_new_btn": "✨ New track",
     "track_do_hit": "📈 Mark progress",
     "track_do_end": "🏁 End",
     "track_do_clear": "🧹 Clear",
-    "tnew_pick_type": "Choose the track type:",
-    "tnew_pick_rank": "Choose the track's rank:",
+    "tnew_pick_type": (
+        "What kind of challenge is it? The type only labels the track — pick "
+        "what fits the story:"
+    ),
+    "tnew_pick_rank": (
+        "How hard is it? Harder ranks fill the 10-box bar slower — +N is "
+        "boxes per mark:"
+    ),
     "tnew_ask_title": "Type the track's title: (/cancel to abort)",
+    "track_created_hint": (
+        "💡 Anyone in the chat can mark 📈 progress; 🏁 End resolves it by the "
+        "bar (10 — strong hit · 7+ — weak hit)."
+    ),
     # GM submenu
-    "gm_menu_title": "Game Master:",
+    "gm_menu_title": (
+        "The AI Game Master describes scenes and the world; dice and rules "
+        "stay with the bot. Start a campaign or continue:"
+    ),
     "gm_start_btn": "🗺️ Start campaign",
     "gm_scene_btn": "🎬 Scene",
     "gm_npcs_btn": "🎭 NPCs",
@@ -681,7 +779,11 @@ TEXTS["en"].update({
 TEXTS["ru"].update({
     # navigation
     "btn_home": "🏠 Меню",
-    "menu_title": "Главное меню — выбери действие:",
+    "menu_title": (
+        "Главное меню. Цикл игры: действуй (⚔️ Ход или 🎲 Бросок) → не знаешь, "
+        "как поступит мир? спроси 🔮 Оракула → отмечай прогресс 📜 обетов. "
+        "Выбери действие:"
+    ),
     # main-menu buttons
     "menu_move": "⚔️ Сделать ход",
     "menu_roll": "🎲 Бросок",
@@ -703,48 +805,129 @@ TEXTS["ru"].update({
     "move_gather_information": "Собрать сведения",
     "move_gather_your_resolve": "Собраться с духом",
     "move_reach_a_milestone": "Достичь вехи",
+    # what each move is for (shown before the player commits to one)
+    "move_strike_desc": "атакуешь на своих условиях — преимущество за тобой",
+    "move_clash_desc": "рубишься на равных — противник готов не хуже",
+    "move_face_danger_desc": "преодолеть опасность или действовать под давлением",
+    "move_secure_advantage_desc": "подготовиться и получить перевес перед действием",
+    "move_gather_information_desc": "разведать, расспросить, изучить — узнать полезное",
+    "move_gather_your_resolve_desc": "перевести дух и восстановить душевные силы",
+    "move_reach_a_milestone_desc": "отметить важный шаг к цели",
     # move flow
-    "move_cat_title": "Выбери категорию хода:",
-    "move_pick_title": "Выбери ход:",
-    "move_stat_title": "Какой характеристикой бросаешь?",
+    "move_cat_title": (
+        "Ход — действие по правилам: бросаешь характеристику, а итог сам "
+        "применяется к листу героя. Выбери категорию:"
+    ),
+    "move_pick_title": "Выбери ход — вот для чего каждый:",
+    "move_stat_title": (
+        "Выбери характеристику — её значение на кнопке, чем выше, тем лучше:"
+    ),
+    "move_effects_header": "Возможные исходы:",
     "move_result_header": "⚔️ {move}",
     "move_effect_header": "Эффект:",
     "move_no_effect": "Без механических изменений.",
+    # what-next hints appended to roll/move results
+    "hint_strong": "💡 Всё в твоих руках — опиши свой успех и продолжай.",
+    "hint_weak": "💡 Успех с ценой — опиши осложнение и продолжай.",
+    "hint_miss": (
+        "💡 Всё пошло не так — опиши неприятность или спроси 🔮 Оракула, что "
+        "случилось."
+    ),
     # roll / oracle flows
-    "roll_pick_title": "Каким параметром бросок?",
-    "oracle_pick_title": "Насколько это вероятно?",
+    "roll_pick_title": (
+        "Чистый бросок действия (d6 + характеристика против двух d10) без "
+        "готового эффекта — что он значит, решаешь ты. Выбери характеристику "
+        "под то, что делаешь:"
+    ),
+    "oracle_pick_title": (
+        "Задай миру вопрос «да/нет» — вслух или про себя — и выбери, "
+        "насколько вероятно «да»:"
+    ),
     # character submenu
-    "char_menu_title": "Персонаж:",
+    "char_menu_title": (
+        "Твой герой: смотри лист, правь треки, когда того требует история, "
+        "веди снаряжение и предысторию."
+    ),
     "char_show_btn": "📜 Лист",
     "char_set_btn": "✏️ Изменить треки",
     "char_create_btn": "✨ Создать героя",
-    "char_set_title": "Какой трек изменить?",
-    "char_field_now": "{field}: {value}",
+    "char_set_title": (
+        "Меняй трек, когда это следует из истории: раны и лечение, мораль, "
+        "потраченные запасы, разгон. Что изменить?"
+    ),
+    "char_field_now": "{field}: {value} (диапазон {low}…{high})",
+    "char_at_limit": "⛔ Это предел — дальше нельзя.",
+    # what each adjustable track is for (shown in the stepper)
+    "field_desc_health": "Здоровье — тело героя: раны, усталость, лечение.",
+    "field_desc_spirit": "Дух — мораль и душевные силы.",
+    "field_desc_supply": "Припасы — запасы и снаряжение в дороге.",
+    "field_desc_momentum": (
+        "Импульс — нарративный разгон. При броске его можно сжечь и заменить "
+        "им очки; после — сброс до +2."
+    ),
     # vows submenu
-    "vow_menu_title": "Обеты:",
+    "vow_menu_title": (
+        "Обеты — твои клятвы-квесты, двигатель истории: принеси обет, отмечай "
+        "прогресс по ходу игры, затем испытай исход."
+    ),
     "vow_list_title": "Выбери обет:",
     "vow_act_title": "Что сделать с обетом?",
+    "vow_act_help": (
+        "📈 Прогресс — отметь заметный шаг к цели (клетки по рангу).\n"
+        "✅ Выполнить — бросок против прогресса: чем полнее шкала, тем выше "
+        "шанс.\n"
+        "🏳 Отказаться — бросить обет (цена: −1 Духа)."
+    ),
     "vow_list_btn": "📜 Список",
     "vow_new_btn": "✨ Новый обет",
     "vow_do_progress": "📈 Прогресс",
     "vow_do_fulfill": "✅ Выполнить",
     "vow_do_forsake": "🏳 Отказаться",
-    "vnew_pick_rank": "Выбери ранг обета:",
+    "vnew_pick_rank": (
+        "Насколько труден обет? Чем выше ранг, тем медленнее заполняется "
+        "шкала из 10 клеток — +N на кнопке это клетки за отметку:"
+    ),
     "vnew_ask_title": "Введи название обета: (/cancel — отмена)",
+    "vow_created_hint": (
+        "💡 Отмечай 📈 прогресс по ходу игры; когда шкала подрастёт, испытай "
+        "✅ выполнение — чем она полнее, тем выше шанс."
+    ),
     # tracks submenu
-    "track_menu_title": "Треки группы:",
+    "track_menu_title": (
+        "Треки группы — общие испытания: схватка, путешествие, связь. "
+        "Отмечать и завершать может любой в чате."
+    ),
     "track_list_title": "Выбери трек:",
     "track_act_title": "Что сделать с треком?",
+    "track_act_help": (
+        "📈 Отметить — отряд продвигается (клетки по рангу).\n"
+        "🏁 Завершить — итог по шкале: 10 — сильный успех, от 7 — слабый, "
+        "меньше — провал.\n"
+        "🧹 Сброс — обнулить шкалу и продолжить."
+    ),
     "track_list_btn": "🗺️ Список",
     "track_new_btn": "✨ Новый трек",
     "track_do_hit": "📈 Отметить",
     "track_do_end": "🏁 Завершить",
     "track_do_clear": "🧹 Сброс",
-    "tnew_pick_type": "Выбери тип трека:",
-    "tnew_pick_rank": "Выбери ранг трека:",
+    "tnew_pick_type": (
+        "Что это за испытание? Тип — просто ярлык трека: выбери, что ближе "
+        "по истории:"
+    ),
+    "tnew_pick_rank": (
+        "Насколько это трудно? Чем выше ранг, тем медленнее заполняется "
+        "шкала из 10 клеток — +N это клетки за отметку:"
+    ),
     "tnew_ask_title": "Введи название трека: (/cancel — отмена)",
+    "track_created_hint": (
+        "💡 Отмечать 📈 может любой в чате; 🏁 завершение подведёт итог по "
+        "шкале (10 — сильный успех · от 7 — слабый)."
+    ),
     # GM submenu
-    "gm_menu_title": "Мастер (GM):",
+    "gm_menu_title": (
+        "AI-Мастер описывает сцены и мир; кубики и правила остаются за ботом. "
+        "Начни кампанию или продолжай:"
+    ),
     "gm_start_btn": "🗺️ Начать кампанию",
     "gm_scene_btn": "🎬 Сцена",
     "gm_npcs_btn": "🎭 NPC",
@@ -1050,11 +1233,19 @@ TEXTS["en"].update({
     "session_turn_no_hero": (
         "No hero sheet yet — create one via the main menu to make moves."
     ),
-    "session_turn_choose": "Choose an action:",
+    "session_turn_choose": (
+        "Your options: ⚔️ a move by the rules · ✍️ your own action (describe "
+        "it, then roll) · ⏭️ pass the turn."
+    ),
     "session_card_class": "Path: {icon} {name}",
     "session_not_your_turn": "⏳ Not your turn — please wait for yours.",
-    "session_pick_move": "Pick a move:",
-    "session_pick_stat": "Which stat do you use?",
+    "session_pick_move": "Pick a move — here is what each one is for:",
+    "session_pick_stat": (
+        "Pick the stat you use — its value is on the button, higher is better:"
+    ),
+    "scust_pick_stat": (
+        "Now pick the stat this action relies on — its value is on the button:"
+    ),
     "session_action_by": "⚔️ {name} acts:",
     "session_custom_header": "✍️ {name}: {text}",
     "scust_ask_text": "Describe what you do: (/cancel to abort)",
@@ -1120,11 +1311,20 @@ TEXTS["ru"].update({
     "session_turn_no_hero": (
         "Листа героя ещё нет — создай его через главное меню, чтобы делать ходы."
     ),
-    "session_turn_choose": "Выбери действие:",
+    "session_turn_choose": (
+        "Твои варианты: ⚔️ ход по правилам · ✍️ своё действие (опиши и брось) "
+        "· ⏭️ передать ход."
+    ),
     "session_card_class": "Путь: {icon} {name}",
     "session_not_your_turn": "⏳ Сейчас не твой ход — дождись своей очереди.",
-    "session_pick_move": "Выбери ход:",
-    "session_pick_stat": "Какую характеристику используешь?",
+    "session_pick_move": "Выбери ход — вот для чего каждый:",
+    "session_pick_stat": (
+        "Выбери характеристику — её значение на кнопке, чем выше, тем лучше:"
+    ),
+    "scust_pick_stat": (
+        "Теперь выбери характеристику, на которую опирается действие — её "
+        "значение на кнопке:"
+    ),
     "session_action_by": "⚔️ Действует {name}:",
     "session_custom_header": "✍️ {name}: {text}",
     "scust_ask_text": "Опиши, что ты делаешь: (/cancel — отмена)",

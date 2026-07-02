@@ -69,6 +69,38 @@ def test_stat_keyboard_uses_prefix_and_navigates() -> None:
     assert _has_back_and_home(kb, back="move:cat:combat")
 
 
+def test_stat_keyboard_shows_values_when_character_given() -> None:
+    class _Hero:
+        edge, heart, iron, shadow, wits = 1, 2, 3, 2, 1
+
+    kb = menu.stat_keyboard(LANG, "roll:st", menu.HOME, character=_Hero())
+    labels = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any(label.endswith("· 3") for label in labels)  # iron's value shows
+    # without a character the labels stay plain
+    plain = menu.stat_keyboard(LANG, "roll:st", menu.HOME)
+    assert all("·" not in btn.text
+               for row in plain.inline_keyboard for btn in row)
+
+
+def test_session_stat_keyboard_shows_values_when_character_given() -> None:
+    class _Hero:
+        edge, heart, iron, shadow, wits = 2, 1, 1, 3, 2
+
+    kb = menu.session_stat_keyboard(LANG, "sess:st:strike", character=_Hero())
+    labels = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any(label.endswith("· 3") for label in labels)  # shadow's value
+
+
+def test_rank_keyboard_shows_boxes_per_mark() -> None:
+    labels = [
+        btn.text
+        for row in menu.rank_keyboard(LANG, "vnew:rank").inline_keyboard
+        for btn in row
+    ]
+    assert any("+3" in label for label in labels)     # troublesome
+    assert any("+0.25" in label for label in labels)  # epic
+
+
 def test_oracle_keyboard_has_each_odds() -> None:
     kb = menu.oracle_keyboard(LANG)
     callbacks = _all_callbacks(kb)
