@@ -1840,7 +1840,7 @@ def _schedule_intro(
 async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Shared /cancel for every guided creation flow."""
     lang = await _lang(update, context)
-    for key in (_HERO_KEY, "new_vow", "new_track"):
+    for key in (_HERO_KEY, "new_vow", "new_track", "scust_text"):
         context.user_data.pop(key, None)
     if update.message is not None:
         await update.message.reply_text(t(lang, "new_cancelled"))
@@ -1850,7 +1850,7 @@ async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def conv_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Expire an abandoned dialog: drop its state and point back to the menu."""
     lang = await _lang(update, context)
-    for key in (_HERO_KEY, "new_vow", "new_track"):
+    for key in (_HERO_KEY, "new_vow", "new_track", "scust_text"):
         context.user_data.pop(key, None)
     message = update.effective_message
     if message is not None:

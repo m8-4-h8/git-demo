@@ -47,10 +47,18 @@ from bot.handlers import (
     tutorial_callback,
     vow,
 )
+from bot.session_handlers import (
+    build_session_create_handler,
+    build_session_custom_handler,
+    build_session_join_handler,
+    session_callback,
+    session_command,
+)
 from storage import (
     CharacterStore,
     GMStateStore,
     PreferenceStore,
+    SessionStore,
     TrackStore,
     VowStore,
 )
@@ -61,7 +69,9 @@ DEFAULT_DB_PATH = "ironsworn.db"
 # Commands surfaced in Telegram's native "/" menu. Deliberately short: the UX
 # is button-first, so only the essentials are advertised — the rest keep
 # working as a hidden power-user fallback.
-_MENU_COMMANDS = ("menu", "new", "me", "help", "tutorial", "language", "cancel")
+_MENU_COMMANDS = (
+    "menu", "new", "me", "session", "help", "tutorial", "language", "cancel"
+)
 
 
 async def _register_commands(application: Application) -> None:
@@ -86,6 +96,7 @@ async def _post_init(application: Application) -> None:
     await application.bot_data["vows"].init()
     await application.bot_data["tracks"].init()
     await application.bot_data["gm_state"].init()
+    await application.bot_data["sessions"].init()
     await _register_commands(application)
 
 
@@ -112,6 +123,7 @@ def build_application(
     vows: VowStore | None = None,
     tracks: TrackStore | None = None,
     gm_state: GMStateStore | None = None,
+    sessions: SessionStore | None = None,
 ) -> Application:
     """Build the Telegram application and register command handlers."""
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
@@ -125,6 +137,8 @@ def build_application(
         tracks = TrackStore(db_path)
     if gm_state is None:
         gm_state = GMStateStore(db_path)
+    if sessions is None:
+        sessions = SessionStore(db_path)
 
     application = ApplicationBuilder().token(token).post_init(_post_init).build()
     application.bot_data["store"] = store
@@ -132,6 +146,7 @@ def build_application(
     application.bot_data["vows"] = vows
     application.bot_data["tracks"] = tracks
     application.bot_data["gm_state"] = gm_state
+    application.bot_data["sessions"] = sessions
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu_command))
@@ -145,6 +160,11 @@ def build_application(
     application.add_handler(build_track_handler())
     application.add_handler(build_item_handler())
     application.add_handler(build_background_handler())
+    # Multiplayer sessions: lobby password flows + the custom-action flow.
+    application.add_handler(build_session_create_handler())
+    application.add_handler(build_session_join_handler())
+    application.add_handler(build_session_custom_handler())
+    application.add_handler(CommandHandler("session", session_command))
     application.add_handler(CommandHandler("me", me))
     application.add_handler(CommandHandler("set", set_value))
     application.add_handler(CommandHandler("roll", roll))
@@ -159,6 +179,7 @@ def build_application(
             menu_callback, pattern=r"^(menu|move|roll|oracle|char|vow|track|help):"
         )
     )
+    application.add_handler(CallbackQueryHandler(session_callback, pattern=r"^sess:"))
     application.add_handler(CallbackQueryHandler(language_callback, pattern=r"^lang:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern=r"^tut:"))
     application.add_handler(CallbackQueryHandler(gm_callback, pattern=r"^gm:"))

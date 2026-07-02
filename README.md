@@ -26,6 +26,7 @@ power-user fallback.
   `burn` spends momentum (replaces the score, then resets momentum to +2)
 - `/ask <odds> <question>` — yes/no Oracle
 - `/oracle [table]` — draw a spark of inspiration
+- `/session` — co-op session: open a password-protected lobby and play in turns
 - `/language` — switch the bot's language (RU/EN)
 
 The interface is **bilingual (Russian/English)**; each player's language is
@@ -35,6 +36,26 @@ either language (e.g. `/roll iron` or `/roll сталь`, `/ask likely …` or
 
 Characters and language preferences are stored per `(chat, user)`, so several
 players can keep their own characters in one group chat.
+
+## Co-op sessions (multiplayer)
+
+Tap **👥 Co-op session** in the main menu (or `/session`) to open a lobby in a
+group chat. The creator sets a **password**; friends tap Join and type it. The
+lobby message updates in place as the party gathers, and the creator 👑 starts
+the game.
+
+Once started, the chat gets two pinned-style messages:
+
+- **🗺 Setting** — the shared opening scene (written by the local LLM when the
+  GM is enabled, otherwise a built-in text; see `SESSION_LLM_SETTING`).
+- **🎯 Current Turn** — whose turn it is, with that player's full hero card
+  (name, path, stats, health/spirit/supply/momentum) and action buttons:
+  make a named move, describe a custom action, or pass.
+
+Turns rotate **round-robin**. Only the active player's taps work — anyone else
+gets a polite popup. An idle player is skipped automatically after 10 minutes,
+and leaving mid-game hands the turn (and, for the creator, the crown) to the
+next player.
 
 ## Architecture
 

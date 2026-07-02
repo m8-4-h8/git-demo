@@ -35,6 +35,15 @@ The frontend is Telegram, but the game core is frontend-independent.
   with per-outcome effects on the character's tracks/momentum. `resolve_move`
   rolls a player-chosen stat and `apply_effects` clamps & applies the delta —
   still pure, deterministic, no telegram/storage.
+- **`engine/session.py`** holds the multiplayer **session rules**: an immutable
+  `GameSession` (creator, password, phase LOBBY/ACTIVE, a `players` tuple that
+  doubles as the turn order, `turn_index`) plus pure functions —
+  `create/join/leave/start_session`, `advance_turn`, `active_player`,
+  `is_active_player`. Every rule violation is a distinct `SessionError`
+  subclass (`WrongPassword`, `AlreadyJoined`, `SessionFull`, `NotCreator`, …)
+  so the bot can localize each case. Leaving handles the edge cases: the turn
+  passes on, the earliest remaining player inherits the creator role, and an
+  empty session dissolves to `None`.
 - **`engine/classes.py`** holds the character **archetypes** ("paths") — eight
   light, original adaptations (Warrior, Rogue, Ranger, Sage, Priest, Bard,
   Savage, Wanderer). Each `CharacterArchetype` is language-agnostic data (a
@@ -63,6 +72,25 @@ The frontend is Telegram, but the game core is frontend-independent.
   reply; empty vow/track lists offer a create button; a typing indicator shows
   while the narrator/GM generate; every guided dialog expires after 10 minutes
   (`conversation_timeout`) so an abandoned flow never swallows later messages.
+  **Co-op sessions** live in `bot/session_handlers.py` (own module; imports the
+  shared helpers from `bot/handlers.py`): `session_callback` routes the `sess:`
+  prefix, and three conversations own `screate:` (create lobby → typed
+  password), `sjoin:` (join → typed password; the password message is deleted
+  after reading) and `scust:` (custom action → typed description → stat
+  buttons). One session per chat (`storage/sessions.py`, `sessions` table keyed
+  by `chat_id`; `SessionRecord` wraps the engine `GameSession` plus the shared
+  language and the ids of the edit-in-place messages). The UX runs on three
+  edit-in-place messages: the **lobby** (participant list, refreshed on
+  join/leave — shared by the group, so deliberately no Home/Back buttons), the
+  **🗺 Setting** (posted once at game start; LLM-written when
+  `SESSION_LLM_SETTING` — defaulting to `GM_ENABLED` — is on, else a static
+  i18n text, always fail-soft) and the **🎯 Current Turn** (the active player's
+  hero card — name, path, stats, tracks — plus move/custom/pass buttons, edited
+  on every turn change). **Access control:** every game-turn button verifies
+  the clicker is the active player and answers everyone else with a popup
+  alert, executing nothing; start/end are enforced creator-only the same way.
+  Turns rotate round-robin; an idle active player is auto-skipped after 10
+  minutes via the job queue.
 - **`narrator/`** is an OPTIONAL LLM prose layer (local LLM via Ollama, over
   async HTTP with `httpx`). After a mechanical outcome (a roll, a vow
   fulfillment, an encounter) it writes 2-3 sentences of flavor — it

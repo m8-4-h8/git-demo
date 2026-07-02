@@ -990,3 +990,145 @@ TEXTS["ru"].update({
     "btn_create_hero": "✅ Создать героя",
     "btn_restart": "🔄 Начать заново",
 })
+
+# --- Multiplayer sessions (lobby, turns, access control) -----------------------
+TEXTS["en"].update({
+    "menu_session": "👥 Co-op session",
+    "cmd_session": "co-op session: lobby and turns",
+    # hub
+    "session_hub_none": (
+        "No session in this chat yet. Open a lobby, share the password with "
+        "your friends, and play in turns."
+    ),
+    "session_status_active": "🎮 The game is on. Now acting: {name}",
+    # buttons
+    "session_create_btn": "➕ Create a session",
+    "session_join_btn": "🔑 Join",
+    "session_start_btn": "▶️ Start the game",
+    "session_leave_btn": "🚪 Leave",
+    "session_end_btn": "⏹ End the session",
+    "session_act_move_btn": "⚔️ Make a move",
+    "session_act_custom_btn": "✍️ Describe an action",
+    "session_act_pass_btn": "⏭️ Pass the turn",
+    # lobby
+    "screate_ask_password": (
+        "Set a password for the session (up to {max} characters). Friends will "
+        "type it to join. (/cancel to abort)"
+    ),
+    "session_password_invalid": "Please send a non-empty password up to {max} characters.",
+    "session_exists": "This chat already has a session.",
+    "sjoin_ask_password": "Type the session password: (/cancel to abort)",
+    "session_lobby_title": "🎪 Session lobby — gathering the party",
+    "session_lobby_players": "Party ({count}):",
+    "session_lobby_hint": (
+        "Tap Join and type the password. The creator 👑 starts the game when "
+        "everyone is in."
+    ),
+    "session_joined": "✅ {name} joined the party!",
+    "session_wrong_password": "❌ Wrong password. Try again: (/cancel to abort)",
+    "session_already_joined": "You are already in the party.",
+    "session_full": "The party is full (max {max} players).",
+    "session_already_started": "The game has already started.",
+    "session_no_session": "There is no session in this chat.",
+    "session_not_creator": "Only the session creator 👑 can do that.",
+    "session_not_in": "You are not in this party.",
+    "session_left": "🚪 {name} left the party.",
+    "session_dissolved": "🏁 The party dissolved — the session is over.",
+    "session_ended": "🏁 The session has ended. Thanks for playing!",
+    "session_new_creator": "👑 {name} now leads the session.",
+    # game start & setting
+    "session_started": "🎬 The game begins!",
+    "session_setting_header": "🗺 Setting",
+    "session_setting_default": (
+        "Cold winds sweep the Ironlands. Your fellowship gathers by a guttering "
+        "fire at the edge of settled lands: behind you, the villages you swore "
+        "to protect; ahead, untamed hills and old ruins no map remembers. "
+        "Whatever brought you together, the road now runs one way — forward."
+    ),
+    # the Current-Turn message
+    "session_turn_header": "🎯 Turn: {name}",
+    "session_turn_no_hero": (
+        "No hero sheet yet — create one via the main menu to make moves."
+    ),
+    "session_turn_choose": "Choose an action:",
+    "session_card_class": "Path: {icon} {name}",
+    "session_not_your_turn": "⏳ Not your turn — please wait for yours.",
+    "session_pick_move": "Pick a move:",
+    "session_pick_stat": "Which stat do you use?",
+    "session_action_by": "⚔️ {name} acts:",
+    "session_custom_header": "✍️ {name}: {text}",
+    "scust_ask_text": "Describe what you do: (/cancel to abort)",
+    "scust_empty_text": "Please describe the action in a few words.",
+    "session_passed": "⏭️ {name} passes the turn.",
+    "session_skipped": "💤 {name} was away too long — the turn moves on.",
+})
+TEXTS["ru"].update({
+    "menu_session": "👥 Совместная игра",
+    "cmd_session": "совместная игра: лобби и ходы",
+    # hub
+    "session_hub_none": (
+        "В этом чате пока нет сессии. Открой лобби, поделись паролем с друзьями "
+        "и играйте по очереди."
+    ),
+    "session_status_active": "🎮 Игра идёт. Сейчас действует: {name}",
+    # buttons
+    "session_create_btn": "➕ Создать сессию",
+    "session_join_btn": "🔑 Присоединиться",
+    "session_start_btn": "▶️ Начать игру",
+    "session_leave_btn": "🚪 Выйти",
+    "session_end_btn": "⏹ Завершить сессию",
+    "session_act_move_btn": "⚔️ Сделать ход",
+    "session_act_custom_btn": "✍️ Описать действие",
+    "session_act_pass_btn": "⏭️ Передать ход",
+    # lobby
+    "screate_ask_password": (
+        "Придумай пароль сессии (до {max} символов). Друзья введут его, чтобы "
+        "присоединиться. (/cancel — отмена)"
+    ),
+    "session_password_invalid": "Отправь непустой пароль до {max} символов.",
+    "session_exists": "В этом чате уже есть сессия.",
+    "sjoin_ask_password": "Введи пароль сессии: (/cancel — отмена)",
+    "session_lobby_title": "🎪 Лобби сессии — собираем отряд",
+    "session_lobby_players": "Отряд ({count}):",
+    "session_lobby_hint": (
+        "Нажми «Присоединиться» и введи пароль. Создатель 👑 начнёт игру, когда "
+        "все в сборе."
+    ),
+    "session_joined": "✅ {name} в отряде!",
+    "session_wrong_password": "❌ Неверный пароль. Попробуй ещё раз: (/cancel — отмена)",
+    "session_already_joined": "Ты уже в отряде.",
+    "session_full": "Отряд полон (максимум {max} игроков).",
+    "session_already_started": "Игра уже началась.",
+    "session_no_session": "В этом чате нет сессии.",
+    "session_not_creator": "Это может сделать только создатель сессии 👑.",
+    "session_not_in": "Ты не в этом отряде.",
+    "session_left": "🚪 {name} покинул(а) отряд.",
+    "session_dissolved": "🏁 Отряд распался — сессия окончена.",
+    "session_ended": "🏁 Сессия завершена. Спасибо за игру!",
+    "session_new_creator": "👑 Теперь сессию ведёт {name}.",
+    # game start & setting
+    "session_started": "🎬 Игра начинается!",
+    "session_setting_header": "🗺 Сцена",
+    "session_setting_default": (
+        "Холодные ветра гуляют по Железным землям. Ваш отряд собрался у "
+        "дрожащего костра на краю обжитых земель: позади — деревни, которые вы "
+        "поклялись защищать; впереди — дикие холмы и древние руины, которых не "
+        "помнит ни одна карта. Что бы вас ни свело, дорога теперь одна — вперёд."
+    ),
+    # the Current-Turn message
+    "session_turn_header": "🎯 Ход: {name}",
+    "session_turn_no_hero": (
+        "Листа героя ещё нет — создай его через главное меню, чтобы делать ходы."
+    ),
+    "session_turn_choose": "Выбери действие:",
+    "session_card_class": "Путь: {icon} {name}",
+    "session_not_your_turn": "⏳ Сейчас не твой ход — дождись своей очереди.",
+    "session_pick_move": "Выбери ход:",
+    "session_pick_stat": "Какую характеристику используешь?",
+    "session_action_by": "⚔️ Действует {name}:",
+    "session_custom_header": "✍️ {name}: {text}",
+    "scust_ask_text": "Опиши, что ты делаешь: (/cancel — отмена)",
+    "scust_empty_text": "Опиши действие хотя бы парой слов.",
+    "session_passed": "⏭️ {name} передаёт ход.",
+    "session_skipped": "💤 {name} слишком долго отсутствует — ход переходит дальше.",
+})
