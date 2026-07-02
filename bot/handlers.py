@@ -13,13 +13,14 @@ import html
 from collections import Counter
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -109,6 +110,10 @@ VOW_RANK, VOW_TITLE, TRACK_TYPE, TRACK_RANK, TRACK_TITLE = range(5, 10)
 # Conversation states for inventory / background editing.
 ITEM_NAME, BG_TEXT = range(10, 12)
 
+# Abandoned guided dialogs expire after this many seconds, so a later plain
+# message isn't silently swallowed as, say, an item name.
+CONVERSATION_TIMEOUT = 600
+
 _OUTCOME_KEYS = {
     Outcome.STRONG: "outcome_strong",
     Outcome.WEAK: "outcome_weak",
@@ -161,23 +166,29 @@ async def _lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
 # --- informational commands --------------------------------------------------
 
 
+async def _main_menu_view(update, context, lang: str) -> tuple[str, object]:
+    """Title + keyboard for the main menu, nudging newcomers to create a hero."""
+    chat_id, user_id = _ids(update)
+    has_character = await _store(context).get(chat_id, user_id) is not None
+    title_key = "menu_title" if has_character else "menu_title_no_hero"
+    return t(lang, title_key), menu.main_menu(lang, has_character)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
     lang = await _lang(update, context)
     await update.message.reply_text(t(lang, "start"), parse_mode=ParseMode.MARKDOWN)
-    await update.message.reply_text(
-        t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
-    )
+    title, keyboard = await _main_menu_view(update, context, lang)
+    await update.message.reply_text(title, reply_markup=keyboard)
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
     lang = await _lang(update, context)
-    await update.message.reply_text(
-        t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
-    )
+    title, keyboard = await _main_menu_view(update, context, lang)
+    await update.message.reply_text(title, reply_markup=keyboard)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -204,7 +215,9 @@ async def me(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id, user_id = _ids(update)
     character = await _store(context).get(chat_id, user_id)
     if character is None:
-        await update.message.reply_text(t(lang, "no_character"))
+        await update.message.reply_text(
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+        )
         return
     await update.message.reply_text(_format_sheet(character, lang))
 
@@ -241,7 +254,9 @@ async def set_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     store = _store(context)
     character = await store.get(chat_id, user_id)
     if character is None:
-        await update.message.reply_text(t(lang, "no_character"))
+        await update.message.reply_text(
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+        )
         return
 
     updated = set_field(character, field, value)
@@ -273,7 +288,9 @@ async def roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     store = _store(context)
     character = await store.get(chat_id, user_id)
     if character is None:
-        await update.message.reply_text(t(lang, "no_character"))
+        await update.message.reply_text(
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+        )
         return
 
     result = roll_action(stat_value(character, stat_name), adds)
@@ -302,6 +319,7 @@ def _fire_narration(
     chat = update.effective_chat
 
     async def _run() -> None:
+        await _show_typing(chat)
         prose = await narrate(narrator_context)
         if prose:
             await chat.send_message(
@@ -309,6 +327,18 @@ def _fire_narration(
             )
 
     context.application.create_task(_run())
+
+
+async def _show_typing(chat) -> None:
+    """Show a typing indicator while an LLM reply is on its way (fail-soft).
+
+    The indicator clears on its own after ~5s or when the message arrives, so a
+    single fire-and-forget action is enough for our short generations.
+    """
+    try:
+        await chat.send_action(ChatAction.TYPING)
+    except Exception:  # noqa: BLE001 — cosmetic only, never break the flow
+        pass
 
 
 def _schedule_narration(
@@ -367,6 +397,7 @@ def _schedule_gm_scene(
         state = await gm_store.get(chat_id)
         if state is None:
             return  # no active campaign in this chat
+        await _show_typing(chat)
         party = [c.name for c in await char_store.list(chat_id)]
         actor = await char_store.get(chat_id, user_id)
         gm_context = GMContext(
@@ -981,9 +1012,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     parts = query.data.split(":")
     area = parts[0]
     if area == "menu":
-        await query.edit_message_text(
-            t(lang, "menu_title"), reply_markup=menu.main_menu(lang)
-        )
+        title, keyboard = await _main_menu_view(update, context, lang)
+        await query.edit_message_text(title, reply_markup=keyboard)
     elif area == "help":
         await query.edit_message_text(
             t(lang, "help"), reply_markup=menu.help_keyboard(lang)
@@ -1042,7 +1072,7 @@ async def _do_move(update, context, lang: str, move_key: str, stat_name: str) ->
     character = await store.get(chat_id, user_id)
     if character is None:
         await query.edit_message_text(
-            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
         )
         return
     try:
@@ -1103,7 +1133,7 @@ async def _menu_roll(update, context, lang: str, parts: list[str]) -> None:
         character = await _store(context).get(chat_id, user_id)
         if character is None:
             await query.edit_message_text(
-                t(lang, "no_character"), reply_markup=menu.home_only(lang)
+                t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
             )
             return
         result = roll_action(stat_value(character, stat_name), 0)
@@ -1241,14 +1271,9 @@ async def _menu_vow(update, context, lang: str, parts: list[str]) -> None:
         )
     elif sub == "list":
         vows = await store.list(chat_id, user_id)
-        if not vows:
-            await query.edit_message_text(
-                t(lang, "vow_list_empty"),
-                reply_markup=menu.back_home(lang, "vow:menu"),
-            )
-            return
+        title_key = "vow_list_title" if vows else "vow_list_empty"
         await query.edit_message_text(
-            t(lang, "vow_list_title"),
+            t(lang, title_key),
             reply_markup=menu.vow_list_keyboard(lang, vows),
         )
     elif sub == "act" and len(parts) >= 3:
@@ -1347,14 +1372,9 @@ async def _menu_track(update, context, lang: str, parts: list[str]) -> None:
         )
     elif sub == "list":
         tracks = await store.list(chat_id)
-        if not tracks:
-            await query.edit_message_text(
-                t(lang, "track_list_empty"),
-                reply_markup=menu.back_home(lang, "track:menu"),
-            )
-            return
+        title_key = "track_list_title" if tracks else "track_list_empty"
         await query.edit_message_text(
-            t(lang, "track_list_title"),
+            t(lang, title_key),
             reply_markup=menu.track_list_keyboard(lang, tracks),
         )
     elif sub == "act" and len(parts) >= 3:
@@ -1807,6 +1827,7 @@ def _schedule_intro(
     chat = update.effective_chat
 
     async def _run() -> None:
+        await _show_typing(chat)
         prose = await narrate_intro(name, archetype_label, lang)
         if prose:
             await chat.send_message(
@@ -1819,11 +1840,30 @@ def _schedule_intro(
 async def conv_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Shared /cancel for every guided creation flow."""
     lang = await _lang(update, context)
-    for key in (_HERO_KEY, "new_vow", "new_track"):
+    for key in (_HERO_KEY, "new_vow", "new_track", "scust_text"):
         context.user_data.pop(key, None)
     if update.message is not None:
         await update.message.reply_text(t(lang, "new_cancelled"))
     return ConversationHandler.END
+
+
+async def conv_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Expire an abandoned dialog: drop its state and point back to the menu."""
+    lang = await _lang(update, context)
+    for key in (_HERO_KEY, "new_vow", "new_track", "scust_text"):
+        context.user_data.pop(key, None)
+    message = update.effective_message
+    if message is not None:
+        try:
+            await message.reply_text(
+                t(lang, "conv_expired"), reply_markup=menu.home_only(lang)
+            )
+        except Exception:  # noqa: BLE001 — expiry is best-effort
+            pass
+    return ConversationHandler.END
+
+
+_TIMEOUT_STATE = {ConversationHandler.TIMEOUT: [TypeHandler(Update, conv_timeout)]}
 
 
 def build_new_handler() -> ConversationHandler:
@@ -1852,8 +1892,10 @@ def build_new_handler() -> ConversationHandler:
                 CallbackQueryHandler(new_create, pattern=r"^cnew:create$"),
                 CallbackQueryHandler(new_restart, pattern=r"^cnew:restart$"),
             ],
+            **_TIMEOUT_STATE,
         },
         fallbacks=[CommandHandler("cancel", conv_cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT,
     )
 
 
@@ -1912,8 +1954,10 @@ def build_vow_handler() -> ConversationHandler:
         states={
             VOW_RANK: [CallbackQueryHandler(vnew_rank, pattern=r"^vnew:rank:")],
             VOW_TITLE: [MessageHandler(text, vnew_title)],
+            **_TIMEOUT_STATE,
         },
         fallbacks=[CommandHandler("cancel", conv_cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT,
     )
 
 
@@ -1986,8 +2030,10 @@ def build_track_handler() -> ConversationHandler:
             TRACK_TYPE: [CallbackQueryHandler(tnew_type, pattern=r"^tnew:type:")],
             TRACK_RANK: [CallbackQueryHandler(tnew_rank, pattern=r"^tnew:rank:")],
             TRACK_TITLE: [MessageHandler(text, tnew_title)],
+            **_TIMEOUT_STATE,
         },
         fallbacks=[CommandHandler("cancel", conv_cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT,
     )
 
 
@@ -2003,7 +2049,7 @@ async def item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id, user_id = _ids(update)
     if await _store(context).get(chat_id, user_id) is None:
         await query.edit_message_text(
-            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
         )
         return ConversationHandler.END
     await query.edit_message_text(t(lang, "item_add_prompt"))
@@ -2026,7 +2072,9 @@ async def item_add_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     store = _store(context)
     character = await store.get(chat_id, user_id)
     if character is None:
-        await update.message.reply_text(t(lang, "no_character"))
+        await update.message.reply_text(
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+        )
         return ConversationHandler.END
     if len(character.items) >= MAX_ITEMS:
         await update.message.reply_text(t(lang, "inventory_full", max=MAX_ITEMS))
@@ -2046,8 +2094,9 @@ def build_item_handler() -> ConversationHandler:
     text = filters.TEXT & ~filters.COMMAND
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(item_add_start, pattern=r"^iadd:start$")],
-        states={ITEM_NAME: [MessageHandler(text, item_add_save)]},
+        states={ITEM_NAME: [MessageHandler(text, item_add_save)], **_TIMEOUT_STATE},
         fallbacks=[CommandHandler("cancel", conv_cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT,
     )
 
 
@@ -2060,7 +2109,7 @@ async def bg_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id, user_id = _ids(update)
     if await _store(context).get(chat_id, user_id) is None:
         await query.edit_message_text(
-            t(lang, "no_character"), reply_markup=menu.home_only(lang)
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
         )
         return ConversationHandler.END
     await query.edit_message_text(t(lang, "bg_prompt", max=MAX_BACKGROUND_LENGTH))
@@ -2080,7 +2129,9 @@ async def bg_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     store = _store(context)
     character = await store.get(chat_id, user_id)
     if character is None:
-        await update.message.reply_text(t(lang, "no_character"))
+        await update.message.reply_text(
+            t(lang, "no_character"), reply_markup=menu.no_character_keyboard(lang)
+        )
         return ConversationHandler.END
 
     updated = set_background(character, text_in)
@@ -2097,8 +2148,9 @@ def build_background_handler() -> ConversationHandler:
     text = filters.TEXT & ~filters.COMMAND
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(bg_start, pattern=r"^bgset:start$")],
-        states={BG_TEXT: [MessageHandler(text, bg_save)]},
+        states={BG_TEXT: [MessageHandler(text, bg_save)], **_TIMEOUT_STATE},
         fallbacks=[CommandHandler("cancel", conv_cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT,
     )
 
 

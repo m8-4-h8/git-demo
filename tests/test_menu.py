@@ -22,14 +22,26 @@ def _has_back_and_home(keyboard, *, back: str) -> bool:
     return back in callbacks and menu.HOME in callbacks
 
 
-def test_main_menu_has_eight_entries() -> None:
+def test_main_menu_has_nine_entries() -> None:
     callbacks = _all_callbacks(menu.main_menu(LANG))
     assert callbacks == [
         "move:cat", "roll:menu",
         "vow:menu", "track:menu",
         "char:menu", "oracle:menu",
+        "sess:menu",
         "gm:menu", "help:show",
     ]
+
+
+def test_main_menu_offers_creation_to_newcomers() -> None:
+    callbacks = _all_callbacks(menu.main_menu(LANG, has_character=False))
+    assert callbacks[0] == "cnew:start"  # the CTA leads the menu
+    assert "move:cat" in callbacks       # the full menu is still there
+
+
+def test_no_character_keyboard_offers_creation_and_home() -> None:
+    callbacks = _all_callbacks(menu.no_character_keyboard(LANG))
+    assert callbacks == ["cnew:start", menu.HOME]
 
 
 def test_move_categories_cover_enum_and_navigate() -> None:
@@ -176,3 +188,56 @@ def test_lists_render_item_callbacks() -> None:
 
     track_cbs = _all_callbacks(menu.track_list_keyboard(LANG, vows))
     assert "track:act:1" in track_cbs and "track:act:2" in track_cbs
+
+
+def test_empty_lists_offer_creation() -> None:
+    vow_cbs = _all_callbacks(menu.vow_list_keyboard(LANG, []))
+    assert "vnew:start" in vow_cbs  # empty state carries a call to action
+
+    track_cbs = _all_callbacks(menu.track_list_keyboard(LANG, []))
+    assert "tnew:start" in track_cbs
+
+
+# --- multiplayer sessions (lobby + turns) -------------------------------------
+
+
+def test_session_none_offers_creation() -> None:
+    callbacks = _all_callbacks(menu.session_none_keyboard(LANG))
+    assert "screate:start" in callbacks
+    assert menu.HOME in callbacks
+
+
+def test_lobby_keyboard_has_join_start_leave_and_no_nav() -> None:
+    callbacks = _all_callbacks(menu.lobby_keyboard(LANG))
+    assert callbacks == ["sjoin:start", "sess:begin", "sess:leave"]
+    # the lobby message is shared by the whole group: no Home/Back that would
+    # let one player navigate the shared view away for everyone
+    assert menu.HOME not in callbacks
+
+
+def test_session_active_keyboard_offers_leave_end_home() -> None:
+    callbacks = _all_callbacks(menu.session_active_keyboard(LANG))
+    assert "sess:leave" in callbacks and "sess:end" in callbacks
+    assert menu.HOME in callbacks
+
+
+def test_turn_keyboard_needs_a_hero_for_actions() -> None:
+    with_hero = _all_callbacks(menu.turn_keyboard(LANG, has_character=True))
+    assert with_hero == ["sess:move", "scust:start", "sess:pass"]
+
+    without = _all_callbacks(menu.turn_keyboard(LANG, has_character=False))
+    assert without == ["sess:pass"]  # no sheet — only passing is possible
+
+
+def test_session_moves_keyboard_lists_all_moves_and_goes_back() -> None:
+    callbacks = _all_callbacks(menu.session_moves_keyboard(LANG))
+    for key in MOVES:
+        assert f"sess:mv:{key}" in callbacks
+    assert "sess:turn" in callbacks
+
+
+def test_session_stat_keyboard_uses_prefix_and_goes_back() -> None:
+    callbacks = _all_callbacks(menu.session_stat_keyboard(LANG, "sess:st:strike"))
+    for stat in STAT_NAMES:
+        assert f"sess:st:strike:{stat}" in callbacks
+    assert "sess:turn" in callbacks

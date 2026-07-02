@@ -36,6 +36,17 @@ def test_every_language_has_required_label_keys() -> None:
             assert key in TEXTS[lang], f"{lang} missing {key}"
 
 
+def test_every_language_describes_the_command_menu() -> None:
+    from bot.main import _MENU_COMMANDS
+
+    for lang in LANGS:
+        for name in _MENU_COMMANDS:
+            description = TEXTS[lang].get(f"cmd_{name}")
+            assert description, f"{lang} missing cmd_{name}"
+            # Telegram limits command descriptions to 256 chars.
+            assert len(description) <= 256
+
+
 def test_every_language_localizes_archetypes_and_gear() -> None:
     required = [f"stat_{s}_desc" for s in STAT_NAMES]
     for key in ARCHETYPES:

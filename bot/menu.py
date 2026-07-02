@@ -31,16 +31,30 @@ def _nav(lang: str, back: str) -> list[_Btn]:
     ]
 
 
-def main_menu(lang: str) -> _Kb:
-    return _Kb([
+def main_menu(lang: str, has_character: bool = True) -> _Kb:
+    """The main menu; newcomers get a Create-hero CTA on top."""
+    rows = []
+    if not has_character:
+        rows.append([_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")])
+    rows += [
         [_Btn(t(lang, "menu_move"), callback_data="move:cat"),
          _Btn(t(lang, "menu_roll"), callback_data="roll:menu")],
         [_Btn(t(lang, "menu_vows"), callback_data="vow:menu"),
          _Btn(t(lang, "menu_tracks"), callback_data="track:menu")],
         [_Btn(t(lang, "menu_character"), callback_data="char:menu"),
          _Btn(t(lang, "menu_oracle"), callback_data="oracle:menu")],
+        [_Btn(t(lang, "menu_session"), callback_data="sess:menu")],
         [_Btn(t(lang, "menu_gm"), callback_data="gm:menu"),
          _Btn(t(lang, "menu_help"), callback_data="help:show")],
+    ]
+    return _Kb(rows)
+
+
+def no_character_keyboard(lang: str) -> _Kb:
+    """Shown with 'you have no hero yet' — a way forward, not a dead end."""
+    return _Kb([
+        [_Btn(t(lang, "char_create_btn"), callback_data="cnew:start")],
+        [_Btn(t(lang, "btn_home"), callback_data=HOME)],
     ])
 
 
@@ -149,10 +163,13 @@ def vow_menu(lang: str) -> _Kb:
 
 
 def vow_list_keyboard(lang: str, vows) -> _Kb:
+    """One button per vow; an empty list offers creating one right here."""
     rows = [
         [_Btn(f"#{v.id} {v.title}", callback_data=f"vow:act:{v.id}")]
         for v in vows
     ]
+    if not vows:
+        rows.append([_Btn(t(lang, "vow_new_btn"), callback_data="vnew:start")])
     rows.append(_nav(lang, "vow:menu"))
     return _Kb(rows)
 
@@ -178,10 +195,13 @@ def track_menu(lang: str) -> _Kb:
 
 
 def track_list_keyboard(lang: str, tracks) -> _Kb:
+    """One button per track; an empty list offers creating one right here."""
     rows = [
         [_Btn(f"#{tr.id} {tr.title}", callback_data=f"track:act:{tr.id}")]
         for tr in tracks
     ]
+    if not tracks:
+        rows.append([_Btn(t(lang, "track_new_btn"), callback_data="tnew:start")])
     rows.append(_nav(lang, "track:menu"))
     return _Kb(rows)
 
@@ -294,3 +314,72 @@ def new_confirm_keyboard(lang: str) -> _Kb:
         _Btn(t(lang, "btn_create_hero"), callback_data="cnew:create"),
         _Btn(t(lang, "btn_restart"), callback_data="cnew:restart"),
     ]])
+
+
+# --- multiplayer sessions (lobby + turns) -------------------------------------
+
+
+def session_none_keyboard(lang: str) -> _Kb:
+    """No session in this chat yet: offer to open a lobby."""
+    return _Kb([
+        [_Btn(t(lang, "session_create_btn"), callback_data="screate:start")],
+        [_Btn(t(lang, "btn_home"), callback_data=HOME)],
+    ])
+
+
+def lobby_keyboard(lang: str) -> _Kb:
+    """The shared lobby message's buttons.
+
+    One message serves every player in the group, so all controls are always
+    shown; the handlers enforce who may press what (start is creator-only) and
+    reject others with an alert. Deliberately no Home/Back: navigating would
+    destroy the shared lobby view for everyone.
+    """
+    return _Kb([
+        [_Btn(t(lang, "session_join_btn"), callback_data="sjoin:start")],
+        [_Btn(t(lang, "session_start_btn"), callback_data="sess:begin")],
+        [_Btn(t(lang, "session_leave_btn"), callback_data="sess:leave")],
+    ])
+
+
+def session_active_keyboard(lang: str) -> _Kb:
+    """The session hub while a game runs (end is enforced creator-only)."""
+    return _Kb([
+        [_Btn(t(lang, "session_leave_btn"), callback_data="sess:leave"),
+         _Btn(t(lang, "session_end_btn"), callback_data="sess:end")],
+        [_Btn(t(lang, "btn_home"), callback_data=HOME)],
+    ])
+
+
+def turn_keyboard(lang: str, has_character: bool) -> _Kb:
+    """Action choices on the Current-Turn message (active player only).
+
+    Without a hero only passing is possible — moves need a character sheet.
+    """
+    rows = []
+    if has_character:
+        rows.append([_Btn(t(lang, "session_act_move_btn"), callback_data="sess:move")])
+        rows.append([_Btn(t(lang, "session_act_custom_btn"),
+                          callback_data="scust:start")])
+    rows.append([_Btn(t(lang, "session_act_pass_btn"), callback_data="sess:pass")])
+    return _Kb(rows)
+
+
+def session_moves_keyboard(lang: str) -> _Kb:
+    """Every named move as one flat list (``sess:mv:<key>``), plus back-to-turn."""
+    rows = [
+        [_Btn(t(lang, f"move_{key}"), callback_data=f"sess:mv:{key}")]
+        for key in MOVES
+    ]
+    rows.append([_Btn(t(lang, "btn_back"), callback_data="sess:turn")])
+    return _Kb(rows)
+
+
+def session_stat_keyboard(lang: str, prefix: str, back: str = "sess:turn") -> _Kb:
+    """Stat picker for a session action (``{prefix}:{stat}``), plus a back button."""
+    rows = [
+        [_Btn(t(lang, f"stat_{stat}"), callback_data=f"{prefix}:{stat}")]
+        for stat in STAT_NAMES
+    ]
+    rows.append([_Btn(t(lang, "btn_back"), callback_data=back)])
+    return _Kb(rows)
